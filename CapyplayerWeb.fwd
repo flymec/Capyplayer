@@ -1,0 +1,88 @@
+{
+  "title": "自用",
+  "description": "自用模块18+聚合",
+  "icon": "https://raw.githubusercontent.com/pan212/FW/refs/heads/main/icon/one.png",
+  "widgets": [
+	          {
+      "id": "jable",
+      "title": "Jable",
+      "description": "获取Jable全站视频",
+      "requiredVersion": "0.0.1",
+      "version": "1.0.8",
+      "author": "flyme",
+      "url": "https://raw.githubusercontent.com/flymec/Capyplayer/refs/heads/main/Widgets/capyplay.js"
+    },
+    {
+      "id": "ti.bemarkt.javday",
+      "title": "JAVDay",
+      "description": "获取 JAVDay 推荐",
+      "requiredVersion": "0.0.1",
+      "version": "1.5.0",
+      "author": "flyme",
+      "url": ""
+    },
+        {
+      "id": "javrate",
+      "title": "javrate",
+      "description": "javrate",
+      "requiredVersion": "0.0.1",
+      "version": "2.1.1",
+      "author": "flyme",
+      "url": ""
+    },
+ {
+      "id": "xvideos",
+      "title": "XVideos",
+      "description": "Xvideos",
+      "requiredVersion": "0.0.1",
+      "version": "0.9.4",
+      "author": "flyme",
+      "url": ""
+    },
+ {
+      "id": "missav",
+      "title": "missav",
+      "description": "missav",
+      "requiredVersion": "0.0.1",
+      "version": "0.9.4",
+      "author": "flyme",
+      "url": ""
+    },
+ {
+      "id": "ph",
+      "title": "ph",
+      "description": "ph",
+      "requiredVersion": "0.0.1",
+      "version": "0.9.4",
+      "author": "flyme",
+      "url": ""
+    },
+ {
+      "id": "bz",
+      "title": "bz",
+      "description": "bz",
+      "requiredVersion": "0.0.1",
+      "version": "0.9.4",
+      "author": "flyme",
+      "url": ""
+    },
+ {
+      "id": "91porn",
+      "title": "91porn",
+      "description": "91porn",
+      "requiredVersion": "0.0.1",
+      "version": "0.9.4",
+      "author": "flyme",
+      "url": ""
+    },
+{
+      "id": "hanime1",
+      "title": "hanime1",
+      "description": "hanime1",
+      "requiredVersion": "0.0.2",
+      "version": "1.0.2",
+      "author": "fly",
+      "url": ""
+    }
+  ]
+}
