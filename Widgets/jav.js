@@ -449,32 +449,49 @@ async function search(params) {
 
 
 
-// 主详情加载函数（替换原 loadDetail）
+// 辅助函数：带超时的 fetchHtml
+function fetchHtmlWithTimeout(url, timeoutMs) {
+  timeoutMs = timeoutMs || 10000; // 默认 10 秒
+  return new Promise(function(resolve, reject) {
+    var timer = setTimeout(function() {
+      reject(new Error("请求超时 (" + timeoutMs + "ms)"));
+    }, timeoutMs);
+
+    fetchHtml(url)
+      .then(function(html) {
+        clearTimeout(timer);
+        resolve(html);
+      })
+      .catch(function(err) {
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
+}
+
 async function loadDetail(link) {
   var fullLink = normalizeUrl(link);
   console.log("loadDetail: 开始处理 " + fullLink);
 
-  // ---------- 1. 获取页面 HTML ----------
+  // ---------- 1. 获取页面 HTML（设置 12 秒超时）----------
   var html;
   try {
-    html = await fetchHtml(fullLink);
+    html = await fetchHtmlWithTimeout(fullLink, 12000);
     console.log("loadDetail: 页面获取成功，长度=" + html.length);
   } catch (e) {
     console.error("loadDetail: 获取页面失败 - " + e.message);
-    throw new Error("网络错误，无法加载视频页");
+    throw new Error("网络超时，请检查网络或稍后重试");
   }
 
   // ---------- 2. 提取视频地址 ----------
   var videoUrl = null;
   try {
-    // 策略1：DPlayer url
     var dpMatch = html.match(/url\s*:\s*['"]([^'"]*\.m3u8[^'"]*)['"]/i);
     if (dpMatch && dpMatch[1]) {
       videoUrl = dpMatch[1];
       console.log("loadDetail: 提取自 DPlayer url = " + videoUrl);
     }
 
-    // 策略2：HTML 注释
     if (!videoUrl) {
       var commentMatch = html.match(/<!--\s*(https?:\/\/[^\s]+\.m3u8[^\s]*)\s*-->/i);
       if (commentMatch && commentMatch[1]) {
@@ -483,7 +500,6 @@ async function loadDetail(link) {
       }
     }
 
-    // 策略3：全局搜索
     if (!videoUrl) {
       var globalMatch = html.match(/https?:\/\/[^"'\s]+\.m3u8[^"'\s]*/i);
       if (globalMatch) {
@@ -496,14 +512,13 @@ async function loadDetail(link) {
   }
 
   if (!videoUrl) {
-    console.error("loadDetail: 未能从页面中提取到视频地址");
     throw new Error("未找到播放地址，可能页面结构已变更");
   }
 
   videoUrl = normalizeUrl(videoUrl);
   console.log("loadDetail: 最终视频地址 = " + videoUrl);
 
-  // ---------- 3. 构建请求头 ----------
+  // ---------- 3. 构建请求头（保留 Range 解决 404）----------
   var videoHeaders = {
     "Referer": fullLink,
     "Origin": BASE_URL,
@@ -513,16 +528,9 @@ async function loadDetail(link) {
     "Accept-Language": "zh-CN,zh;q=0.9"
   };
 
-  // ---------- 4. （可选）预检视频地址可用性 ----------
-  try {
-    var testRes = await Widget.http.get(videoUrl, { headers: videoHeaders });
-    console.log("loadDetail: 预检状态码 = " + testRes.status);
-    if (testRes.status !== 200) {
-      console.warn("loadDetail: 预检非200，但播放器可能仍能处理");
-    }
-  } catch (e) {
-    console.warn("loadDetail: 预检请求失败 - " + e.message + "，将直接交由播放器尝试");
-  }
+  // ---------- 4. 取消预检请求（它是超时的元凶之一）----------
+  // 不再进行 Widget.http.get(videoUrl) 预检，直接交由播放器处理
+  // 因为播放器自身有超时和重试机制，更健壮
 
   // ---------- 5. 提取标题 ----------
   var title = "";
@@ -530,20 +538,16 @@ async function loadDetail(link) {
   if (titleMatch && titleMatch[1]) {
     title = titleMatch[1].replace(/\s*[\|｜].*$/, "").trim();
   }
+
   console.log("loadDetail: 标题 = " + title);
 
-  // ---------- 6. 返回数据（兼容两种常见格式） ----------
+  // ---------- 6. 返回数据 ----------
   return {
     title: title,
     videoUrl: videoUrl,
     customHeaders: videoHeaders,
     playUrls: [{
       title: "HD",
-      url: videoUrl,
-      headers: videoHeaders
-    }],
-    // 有些播放器期望 sources 字段，一并提供
-    sources: [{
       url: videoUrl,
       headers: videoHeaders
     }]
