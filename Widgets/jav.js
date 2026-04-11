@@ -451,43 +451,78 @@ async function loadDetail(link) {
   try {
     var html = await fetchHtml(link);
 
-    var match = html.match(/var hlsUrl\s*=\s*['"]([^'"]+)['"]/);
-    if (!match || !match[1]) {
-      throw new Error("未匹配到 hlsUrl，页面结构可能已变更");
+    var videoUrl = null;
+
+    // =========================
+    // 1. DPlayer 解析（重点）
+    // =========================
+    var dpMatch = html.match(/video\s*:\s*\{[\s\S]*?url\s*:\s*['"]([^'"]+\.m3u8[^'"]*)['"]/);
+    if (dpMatch && dpMatch[1]) {
+      videoUrl = dpMatch[1];
     }
-    var hlsUrl = match[1];
 
+    // =========================
+    // 2. 全局 m3u8
+    // =========================
+    if (!videoUrl) {
+      var m3u8Match = html.match(/https?:\/\/[^'"\s]+\.m3u8[^'"\s]*/);
+      if (m3u8Match) {
+        videoUrl = m3u8Match[0];
+      }
+    }
+
+    // =========================
+    // 3. iframe 兜底
+    // =========================
+    if (!videoUrl) {
+      var iframeMatch = html.match(/<iframe[^>]+src=['"]([^'"]+)['"]/i);
+      if (iframeMatch && iframeMatch[1]) {
+        var iframeHtml = await fetchHtml(normalizeUrl(iframeMatch[1]));
+        var iframeM3u8 = iframeHtml.match(/https?:\/\/[^'"\s]+\.m3u8[^'"\s]*/);
+        if (iframeM3u8) {
+          videoUrl = iframeM3u8[0];
+        }
+      }
+    }
+
+    // =========================
+    // ❌ 仍然失败
+    // =========================
+    if (!videoUrl) {
+      throw new Error("未找到播放地址（可能是API动态加载）");
+    }
+
+    // =========================
+    // 标题
+    // =========================
     var titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-    var title = titleMatch ? titleMatch[1].replace(/\s*[\|｜]\s*Jable\.tv.*$/i, "").trim() : "";
-
-    console.log("loadDetail: hlsUrl=" + (hlsUrl ? "found" : "missing") + " title=" + title);
-
-    var headers = {
-      "Referer":    link,
-      "User-Agent": UA,
-    };
+    var title = titleMatch
+      ? titleMatch[1].replace(/\s*[\|｜].*$/, "").trim()
+      : "";
 
     return {
       title: title,
-      // mpv 用
-      videoUrl:      hlsUrl,
-      customHeaders: headers,
-      // mdk / exo 用
+      videoUrl: videoUrl,
+      customHeaders: {
+        "Referer": link,
+        "User-Agent": UA,
+        "Origin": BASE_URL
+      },
       playUrls: [
         {
-          title:   "HD",
-          url:     hlsUrl,
-          headers: headers,
-        },
-      ],
+          title: "HD",
+          url: videoUrl,
+          headers: {
+            "Referer": link,
+            "User-Agent": UA,
+            "Origin": BASE_URL
+          }
+        }
+      ]
     };
+
   } catch (err) {
     console.error("loadDetail error:", err.message);
-    throw err;
-  }
-}
-  } catch (err) {
-    console.error("loadDetail error: " + err.message);
     throw err;
   }
 }
