@@ -485,8 +485,4 @@ async function loadDetail(link) {
     customHeaders: customHeaders,
   };
 }
-  } catch (err) {
-    console.error("loadDetail error:", err.message);
-    throw err;
-  }
-}
+ 
