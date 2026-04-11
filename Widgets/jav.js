@@ -447,36 +447,21 @@ async function search(params) {
   }
 }
 
-async function getRealVideoUrl(html, link) {
-  // 1. 抓 id
-  var idMatch = link.match(/\/videos\/([^\/]+)\//);
-  var id = idMatch ? idMatch[1] : null;
+async function loadDetail(link) {
+  const fullLink = normalizeUrl(link);
+  const html = await httpGet(fullLink, fullLink);
+  const $ = Widget.html.load(html);
 
-  if (!id) return null;
+  const videoUrl = extractVideoUrl($);
+  if (!videoUrl) throw new Error("无法找到视频源");
 
-  // 2. 尝试常见API（关键）
-  var apis = [
-    BASE_URL + "/api/video?id=" + id,
-    BASE_URL + "/ajax/video/" + id,
-    BASE_URL + "/player/" + id
-  ];
-
-  for (var i = 0; i < apis.length; i++) {
-    try {
-      var res = await Widget.http.get(apis[i], {
-        headers: {
-          "Referer": link,
-          "User-Agent": UA
-        }
-      });
-
-      var data = JSON.parse(res.data || "{}");
-
-      if (data.url && data.url.includes(".m3u8")) {
-        return data.url;
-      }
-    } catch (e) {}
-  }
-
-  return null;
+  return {
+    id: fullLink,
+    type: "url",
+    videoUrl: videoUrl,
+    customHeaders: {
+      Referer: fullLink,
+      "User-Agent": CONFIG.USER_AGENT,
+    },
+  };
 }
