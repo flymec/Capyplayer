@@ -5,7 +5,7 @@ var WidgetMetadata = {
   description: "获取 JAVDay 推荐",
   author: "flyme",
   site: "https://javday.app",
-  version: "1.5.2",
+  version: "1.6.0",
   requiredVersion: "0.0.1",
   detailCacheDuration: 60,
   modules: [
@@ -259,57 +259,82 @@ function normalizeUrl(url) {
 function getCoverImgFromStyle(styleAttr) {
   if (!styleAttr) return "";
   const match = styleAttr.match(/url\(\s*['"]?([^'")]+)['"]?\s*\)/);
-  return match ? normalizeUrl(match[1]) : "";
+  if (!match || !match[1]) return "";
+  return normalizeUrl(match[1]);
 }
 
-// 核心解析函数：参考 capyplays 的 parseHtml，但适配 javday 的 class
-function parseVideoList(html, context) {
+// 核心解析函数，模仿 capyplays 的 parseHtml，但适配 JAVDay 的 DOM 结构
+function parseHtml(htmlContent, context = "来自 JAVDay") {
   const items = [];
-  const docId = Widget.dom.parse(html);
+  const docId = Widget.dom.parse(htmlContent);
   try {
-    // JAVDay 的视频卡片使用 .videoBox，外层容器 .video-wrapper
-    const videoBoxes = Widget.dom.select(docId, ".video-wrapper .videoBox");
-    console.log(`parseVideoList: 找到 ${videoBoxes.length} 个视频卡片`);
+    // 尝试多个可能的选择器（按优先级）
+    let cardSelector = ".video-wrapper .videoBox";
+    let cards = Widget.dom.select(docId, cardSelector);
+    if (cards.length === 0) {
+      cardSelector = ".videoBox";
+      cards = Widget.dom.select(docId, cardSelector);
+    }
+    if (cards.length === 0) {
+      cardSelector = ".item";
+      cards = Widget.dom.select(docId, cardSelector);
+    }
+    console.log(`${CONFIG.LOG_PREFIX} parseHtml: 使用选择器 "${cardSelector}" 找到 ${cards.length} 个卡片`);
 
-    for (let i = 0; i < videoBoxes.length; i++) {
-      const box = videoBoxes[i];
-      // 获取链接（videoBox 自身的 href 属性）
-      let link = Widget.dom.attr(box, "href");
+    for (let i = 0; i < cards.length; i++) {
+      const card = cards[i];
+      const link = Widget.dom.attr(card, "href");
       if (!link) continue;
-      link = normalizeUrl(link);
 
-      // 获取标题：在 .videoBox-info .title 内
-      const titleNodes = Widget.dom.select(box, ".videoBox-info .title");
-      if (titleNodes.length === 0) continue;
-      const title = Widget.dom.text(titleNodes[0]).trim();
-      if (!title) continue;
+      // 解析卡片内部
+      const cardHtml = Widget.dom.outerHtml(card);
+      const cardDoc = Widget.dom.parse(cardHtml);
+      try {
+        // 标题：优先 .videoBox-info .title，其次 .title a，最后 .title
+        let titleElem = Widget.dom.select(cardDoc, ".videoBox-info .title")[0];
+        if (!titleElem) titleElem = Widget.dom.select(cardDoc, ".title a")[0];
+        if (!titleElem) titleElem = Widget.dom.select(cardDoc, ".title")[0];
+        if (!titleElem) continue;
+        const title = Widget.dom.text(titleElem).trim();
+        if (!title) continue;
 
-      // 获取封面：.videoBox-cover 的 style 背景图
-      const coverNodes = Widget.dom.select(box, ".videoBox-cover");
-      let poster = "";
-      if (coverNodes.length > 0) {
-        const styleAttr = Widget.dom.attr(coverNodes[0], "style");
-        poster = getCoverImgFromStyle(styleAttr);
+        // 封面图：从 style 背景图获取
+        let imgSrc = "";
+        const coverDiv = Widget.dom.select(cardDoc, ".videoBox-cover")[0];
+        if (coverDiv) {
+          const styleAttr = Widget.dom.attr(coverDiv, "style");
+          imgSrc = getCoverImgFromStyle(styleAttr);
+        }
+        // 备选：从 img 标签的 data-src 或 src 获取
+        if (!imgSrc) {
+          const img = Widget.dom.select(cardDoc, "img")[0];
+          if (img) {
+            imgSrc = Widget.dom.attr(img, "data-src") || Widget.dom.attr(img, "src") || "";
+            imgSrc = normalizeUrl(imgSrc);
+          }
+        }
+
+        items.push({
+          id: `${i}|${link}`,
+          title: title,
+          posterUrl: imgSrc,
+          backdropUrl: imgSrc,
+          previewUrl: "",
+          link: normalizeUrl(link),
+          mediaType: "movie",
+          description: context,
+        });
+      } finally {
+        Widget.dom.remove(cardDoc);
       }
-
-      items.push({
-        id: link,
-        title: title,
-        posterUrl: poster,
-        backdropUrl: poster,
-        previewUrl: "",
-        link: link,
-        mediaType: "movie",
-        description: context || "来自 JAVDay",
-      });
     }
   } finally {
     Widget.dom.remove(docId);
   }
+  console.log(`${CONFIG.LOG_PREFIX} parseHtml: 共解析出 ${items.length} 个视频`);
   return items;
 }
 
-// 从 URL 提取分类 ID（用于构建人气排序路径）
 function extractCategoryId(url) {
   const parts = url.split("/").filter(p => p && p !== "index.php");
   return parts.pop() || "unknown";
@@ -353,14 +378,13 @@ async function loadPage(params = {}) {
 
   try {
     const html = await fetchHtml(targetUrl, url);
-    const items = parseVideoList(html, `排序:${sort_by === "new" ? "最新" : "人气"}`);
+    const items = parseHtml(html, `排序:${sort_by === "new" ? "最新" : "人气"}`);
 
-    // 人气路径无数据时降级
     if (items.length === 0 && sort_by === "popular") {
       console.warn(`${CONFIG.LOG_PREFIX} 人气路径无数据，降级到普通路径`);
       const fallbackUrl = buildPageUrl(url, "new", page);
       const fallbackHtml = await fetchHtml(fallbackUrl, url);
-      return parseVideoList(fallbackHtml, "排序:最新(人气降级)");
+      return parseHtml(fallbackHtml, "排序:最新(人气降级)");
     }
     return items;
   } catch (error) {
@@ -368,7 +392,7 @@ async function loadPage(params = {}) {
       console.warn(`${CONFIG.LOG_PREFIX} 人气路径请求失败，尝试降级`, error.message);
       const fallbackUrl = buildPageUrl(url, "new", page);
       const fallbackHtml = await fetchHtml(fallbackUrl, url);
-      return parseVideoList(fallbackHtml, "排序:最新(人气降级)");
+      return parseHtml(fallbackHtml, "排序:最新(人气降级)");
     }
     throw error;
   }
@@ -378,90 +402,73 @@ async function search(params = {}) {
   const { keyword, from: page = 1 } = params;
   if (!keyword) throw new Error("请输入搜索关键词");
 
-  // 注意：JAVDay 的搜索 URL 格式为 /search/wd/关键词/，页码在第二页后加 /page/数字/
   const encodedKeyword = encodeURIComponent(keyword);
-  let searchUrl;
-  if (page == 1) {
-    searchUrl = `${CONFIG.BASE_URL}/search/wd/${encodedKeyword}/`;
-  } else {
+  // 优先尝试异步块请求（模仿 capyplays 的搜索方式）
+  let searchUrl = `${CONFIG.BASE_URL}/search/wd/${encodedKeyword}/`;
+  if (page > 1) {
     searchUrl = `${CONFIG.BASE_URL}/search/wd/${encodedKeyword}/page/${page}/`;
   }
 
+  // 可选：尝试添加异步参数（如果站点支持）
+  // 有些站点会返回完整 HTML，直接使用即可
+  console.log(`${CONFIG.LOG_PREFIX} 搜索 URL: ${searchUrl}`);
   const html = await fetchHtml(searchUrl);
-  const items = parseVideoList(html, `搜索: ${keyword}`);
+  const items = parseHtml(html, `搜索: ${keyword}`);
   return items;
 }
 
-// 从详情页 HTML 提取视频源（支持多种常见模式）
 function extractVideoUrlFromHtml(html) {
-  // 1. DPlayer 配置中的 video url
-  let match = html.match(/new DPlayer\([\s\S]*?video\s*:\s*{\s*[^}]*url\s*:\s*['"]([^'"]+)['"]/);
+  // 1. 匹配 DPlayer 中的 url
+  const dplayerRegex = /new DPlayer\([\s\S]*?video\s*:\s*{\s*[^}]*url\s*:\s*['"]([^'"]+)['"]/;
+  let match = html.match(dplayerRegex);
   if (match && match[1]) return match[1];
 
-  // 2. 直接的 m3u8 链接
-  match = html.match(/(https?:\/\/[^"'\s]+\.m3u8[^"'\s]*)/);
+  // 2. 直接匹配 .m3u8 地址
+  const m3u8Regex = /(https?:\/\/[^"'\s]+\.m3u8[^"'\s]*)/;
+  match = html.match(m3u8Regex);
   if (match && match[1]) return match[1];
 
-  // 3. video 标签的 src
-  match = html.match(/<video[^>]+src=["']([^"']+\.m3u8[^"']*)["']/);
+  // 3. video 标签 src
+  const videoSrcRegex = /<video[^>]+src=["']([^"']+\.m3u8[^"']*)["']/;
+  match = html.match(videoSrcRegex);
   if (match && match[1]) return match[1];
 
-  // 4. iframe 播放器
-  match = html.match(/<iframe[^>]+src=["']([^"']+player[^"']+)["']/);
+  // 4. iframe 中的播放器
+  const iframeRegex = /<iframe[^>]+src=["']([^"']+player[^"']+)["']/;
+  match = html.match(iframeRegex);
   if (match && match[1]) return normalizeUrl(match[1]);
 
   return null;
 }
 
 async function loadDetail(link) {
-  try {
-    link = normalizeUrl(link);
-    var html = await fetchHtml(link);
+  const fullLink = normalizeUrl(link);
+  const html = await fetchHtml(fullLink, fullLink);
 
-    var videoUrl = null;
+  const videoUrl = extractVideoUrlFromHtml(html);
+  if (!videoUrl) throw new Error("无法找到视频源");
 
-    // 1. DPlayer new DPlayer({ ... url: '...' ... })
-    var dpMatch = html.match(/new\s+DPlayer\s*\([\s\S]*?url\s*:\s*['"]([^'"]+)['"]/);
-    if (dpMatch && dpMatch[1]) {
-      videoUrl = dpMatch[1];
-    }
-
-    // 2. 裸 m3u8 URL
-    if (!videoUrl) {
-      var m3u8Match = html.match(/['"](https?:\/\/[^'"]+\.m3u8[^'"]*)['"]/);
-      if (m3u8Match && m3u8Match[1]) {
-        videoUrl = m3u8Match[1];
-      }
-    }
-
-    // 3. <video src="..."> / <source src="...">
-    if (!videoUrl) {
-      var vsMatch = html.match(/<(?:video|source)[^>]+src\s*=\s*['"]([^'"]+)['"]/i);
-      if (vsMatch && vsMatch[1]) {
-        videoUrl = vsMatch[1];
-      }
-    }
-
-    if (!videoUrl) {
-      throw new Error("无法找到视频源");
-    }
-
-    // 提取标题
-    var titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-    var title = titleMatch ? titleMatch[1].replace(/\s*[-|｜].*$/, "").trim() : "";
-
-    console.log("loadDetail: videoUrl=" + (videoUrl ? "found" : "missing") + " title=" + title);
-
-    return {
-      title:    title,
-      videoUrl: videoUrl,
-      customHeaders: {
-        "Referer":    link,
-        "User-Agent": UA,
-      },
-    };
-  } catch (err) {
-    console.error("loadDetail error: " + err.message);
-    throw err;
+  let title = "";
+  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  if (titleMatch && titleMatch[1]) {
+    title = titleMatch[1].replace(/\s*[\|｜]\s*JAVDay.*$/i, "").trim();
   }
+
+  const headers = {
+    Referer: fullLink,
+    "User-Agent": CONFIG.USER_AGENT,
+  };
+
+  return {
+    title: title,
+    videoUrl: videoUrl,
+    customHeaders: headers,
+    playUrls: [
+      {
+        title: "HD",
+        url: videoUrl,
+        headers: headers,
+      },
+    ],
+  };
 }
