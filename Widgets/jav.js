@@ -449,51 +449,43 @@ async function search(params) {
 
 async function loadDetail(link) {
   try {
-    link = normalizeUrl(link);
     var html = await fetchHtml(link);
 
-    var videoUrl = null;
-
-    // 1. DPlayer new DPlayer({ ... url: '...' ... })
-    var dpMatch = html.match(/new\s+DPlayer\s*\([\s\S]*?url\s*:\s*['"]([^'"]+)['"]/);
-    if (dpMatch && dpMatch[1]) {
-      videoUrl = dpMatch[1];
+    var match = html.match(/var hlsUrl\s*=\s*['"]([^'"]+)['"]/);
+    if (!match || !match[1]) {
+      throw new Error("未匹配到 hlsUrl，页面结构可能已变更");
     }
+    var hlsUrl = match[1];
 
-    // 2. 裸 m3u8 URL
-    if (!videoUrl) {
-      var m3u8Match = html.match(/['"](https?:\/\/[^'"]+\.m3u8[^'"]*)['"]/);
-      if (m3u8Match && m3u8Match[1]) {
-        videoUrl = m3u8Match[1];
-      }
-    }
-
-    // 3. <video src="..."> / <source src="...">
-    if (!videoUrl) {
-      var vsMatch = html.match(/<(?:video|source)[^>]+src\s*=\s*['"]([^'"]+)['"]/i);
-      if (vsMatch && vsMatch[1]) {
-        videoUrl = vsMatch[1];
-      }
-    }
-
-    if (!videoUrl) {
-      throw new Error("无法找到视频源");
-    }
-
-    // 提取标题
     var titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-    var title = titleMatch ? titleMatch[1].replace(/\s*[-|｜].*$/, "").trim() : "";
+    var title = titleMatch ? titleMatch[1].replace(/\s*[\|｜]\s*Jable\.tv.*$/i, "").trim() : "";
 
-    console.log("loadDetail: videoUrl=" + (videoUrl ? "found" : "missing") + " title=" + title);
+    console.log("loadDetail: hlsUrl=" + (hlsUrl ? "found" : "missing") + " title=" + title);
+
+    var headers = {
+      "Referer":    link,
+      "User-Agent": UA,
+    };
 
     return {
-      title:    title,
-      videoUrl: videoUrl,
-      customHeaders: {
-        "Referer":    link,
-        "User-Agent": UA,
-      },
+      title: title,
+      // mpv 用
+      videoUrl:      hlsUrl,
+      customHeaders: headers,
+      // mdk / exo 用
+      playUrls: [
+        {
+          title:   "HD",
+          url:     hlsUrl,
+          headers: headers,
+        },
+      ],
     };
+  } catch (err) {
+    console.error("loadDetail error:", err.message);
+    throw err;
+  }
+}
   } catch (err) {
     console.error("loadDetail error: " + err.message);
     throw err;
