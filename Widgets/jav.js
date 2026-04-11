@@ -5,7 +5,7 @@ var WidgetMetadata = {
   description: "获取 JAVDay 推荐",
   author: "flyme",
   site: "https://javday.app",
-  version: "1.5.1",
+  version: "1.6.0",
   requiredVersion: "0.0.1",
   detailCacheDuration: 60,
   modules: [
@@ -23,7 +23,7 @@ var WidgetMetadata = {
           value: "",
           description: "女優/番號/關鍵字搜索…",
         },
-        { name: "from", title: "页码", type: "page", description: "搜索结果页码" }
+        { name: "page", title: "页码", type: "page", description: "搜索结果页码" }
       ]
     },
     {
@@ -34,7 +34,7 @@ var WidgetMetadata = {
       cacheDuration: 3600,
       params: [
         { name: "url", title: "列表地址", type: "constant", value: "https://javday.app/label/new/" },
-        { name: "from", title: "页码", type: "page" }
+        { name: "page", title: "页码", type: "page" }
       ]
     },
     {
@@ -45,7 +45,7 @@ var WidgetMetadata = {
       cacheDuration: 3600,
       params: [
         { name: "url", title: "列表地址", type: "constant", value: "https://javday.app/label/hot/" },
-        { name: "from", title: "页码", type: "page" }
+        { name: "page", title: "页码", type: "page" }
       ]
     },
     {
@@ -64,7 +64,7 @@ var WidgetMetadata = {
           ],
           value: "new"
         },
-        { name: "from", title: "页码", type: "page" }
+        { name: "page", title: "页码", type: "page" }
       ]
     },
     {
@@ -83,7 +83,7 @@ var WidgetMetadata = {
           ],
           value: "popular"
         },
-        { name: "from", title: "页码", type: "page" }
+        { name: "page", title: "页码", type: "page" }
       ]
     },
     {
@@ -102,7 +102,7 @@ var WidgetMetadata = {
           ],
           value: "new"
         },
-        { name: "from", title: "页码", type: "page" }
+        { name: "page", title: "页码", type: "page" }
       ]
     },
     {
@@ -121,7 +121,7 @@ var WidgetMetadata = {
           ],
           value: "new"
         },
-        { name: "from", title: "页码", type: "page" }
+        { name: "page", title: "页码", type: "page" }
       ]
     },
     {
@@ -140,7 +140,7 @@ var WidgetMetadata = {
           ],
           value: "popular"
         },
-        { name: "from", title: "页码", type: "page" }
+        { name: "page", title: "页码", type: "page" }
       ]
     },
     {
@@ -159,7 +159,7 @@ var WidgetMetadata = {
           ],
           value: "popular"
         },
-        { name: "from", title: "页码", type: "page" }
+        { name: "page", title: "页码", type: "page" }
       ]
     },
     {
@@ -178,7 +178,7 @@ var WidgetMetadata = {
           ],
           value: "popular"
         },
-        { name: "from", title: "页码", type: "page" }
+        { name: "page", title: "页码", type: "page" }
       ]
     },
     {
@@ -198,9 +198,9 @@ var WidgetMetadata = {
             { title: "皇家华人", value: "https://javday.app/index.php/category/royalasianstudio/" },
             { title: "蜜桃影像", value: "https://javday.app/index.php/category/mtgw/" },
             { title: "精东影业", value: "https://javday.app/index.php/category/jdav/" },
-            { title: "台湾 AV", value: "https://javday.app/index.php/category/twav/" },
-            { title: "JVID", value: "https://javday.app/index.php/category/jvid/" },
-            { title: "萝莉社", value: "https://javday.app/index.php/category/luolisheus/" },
+            { title: "台湾 AV",  value: "https://javday.app/index.php/category/twav/" },
+            { title: "JVID",    value: "https://javday.app/index.php/category/jvid/" },
+            { title: "萝莉社",   value: "https://javday.app/index.php/category/luolisheus/" },
             { title: "糖心VLOG", value: "https://javday.app/index.php/category/txvlog/" },
             { title: "Psychoporn TW", value: "https://javday.app/index.php/category/psychoporn-tw/" }
           ],
@@ -214,11 +214,13 @@ var WidgetMetadata = {
           ],
           value: "new"
         },
-        { name: "from", title: "页码", type: "page" }
+        { name: "page", title: "页码", type: "page" }
       ]
     }
   ]
 };
+
+// == Constants ================================================================
 
 // == Constants ================================================================
 const CONFIG = {
