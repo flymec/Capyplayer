@@ -480,8 +480,3 @@ async function getRealVideoUrl(html, link) {
 
   return null;
 }
-  } catch (err) {
-    console.error("loadDetail error:", err.message);
-    throw err;
-  }
-}
