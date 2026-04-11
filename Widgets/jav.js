@@ -413,35 +413,59 @@ function extractVideoUrlFromHtml(html) {
   return null;
 }
 
-async function loadDetail(link) {
-  const fullLink = normalizeUrl(link);
-  const html = await fetchHtml(fullLink, fullLink);
+async function detail(id) {
+  const link = id.split("|")[1];
 
-  const videoUrl = extractVideoUrlFromHtml(html);
-  if (!videoUrl) throw new Error("无法找到视频源");
+  const html = await Network.get(link);
+  const $ = Widget.html.load(html);
 
-  // 尝试提取标题（可选）
-  let title = "";
-  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-  if (titleMatch && titleMatch[1]) {
-    title = titleMatch[1].replace(/\s*[\|｜]\s*JAVDay.*$/i, "").trim();
+  let videoUrl = null;
+
+  // ✅ 1. 专杀：DPlayer解析（最关键）
+  $("script").each((i, el) => {
+    const txt = $(el).html();
+
+    if (txt && txt.includes("DPlayer")) {
+
+      // 精准提取 url
+      const match = txt.match(/url:\s*['"]([^'"]+)['"]/);
+
+      if (match) {
+        videoUrl = match[1];
+      }
+    }
+  });
+
+  // ✅ 2. 备用：m3u8扫描
+  if (!videoUrl) {
+    $("script").each((i, el) => {
+      const txt = $(el).html();
+      if (txt && txt.includes(".m3u8")) {
+        const m = txt.match(/https?:\/\/[^'"]+\.m3u8/);
+        if (m) videoUrl = m[0];
+      }
+    });
   }
 
-  const headers = {
-    Referer: fullLink,
-    "User-Agent": CONFIG.USER_AGENT,
-  };
+  // ✅ 3. 备用：video标签
+  if (!videoUrl) {
+    videoUrl =
+      $("video source").attr("src") ||
+      $("video").attr("src");
+  }
+
+  // ❌ 没拿到
+  if (!videoUrl) {
+    throw new Error("未找到播放地址");
+  }
 
   return {
-    title: title,
-    videoUrl: videoUrl,
-    customHeaders: headers,
-    playUrls: [
-      {
-        title: "HD",
-        url: videoUrl,
-        headers: headers,
-      },
-    ],
+    id,
+    type: "video",
+    url: videoUrl,
+    headers: {
+      Referer: link,
+      "User-Agent": "Mozilla/5.0"
+    }
   };
 }
