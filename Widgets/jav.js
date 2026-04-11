@@ -449,87 +449,68 @@ async function search(params) {
 
 
 
-function fetchHtmlWithTimeout(url, timeoutMs) {
-  return new Promise(function(resolve, reject) {
-    var timer = setTimeout(function() {
-      reject(new Error("请求超时"));
-    }, timeoutMs);
-    
-    Widget.http.get(url, {
-      headers: {
-        "User-Agent": UA,
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "zh-CN,zh;q=0.9",
-        "Referer": BASE_URL + "/"
-      }
-    }).then(function(res) {
-      clearTimeout(timer);
-      if (res.ok) {
-        resolve(res.data);
-      } else {
-        reject(new Error("HTTP " + res.status));
-      }
-    }).catch(function(err) {
-      clearTimeout(timer);
-      reject(err);
-    });
-  });
-}
-
 async function loadDetail(link) {
-  var fullLink = normalizeUrl(link);
-  console.log("开始请求: " + fullLink);
-  
   try {
-    // 8秒超时，快速失败避免长时间卡死
-    var html = await fetchHtmlWithTimeout(fullLink, 8000);
-    console.log("页面获取成功，长度: " + html.length);
-    
+    link = normalizeUrl(link);
+    var html = await fetchHtml(link);
+
     var videoUrl = null;
-    var dpMatch = html.match(/url\s*:\s*['"]([^'"]*\.m3u8[^'"]*)['"]/i);
-    if (dpMatch) videoUrl = dpMatch[1];
+
+    // 1. DPlayer new DPlayer({ ... url: '...' ... })
+    var dpMatch = html.match(/new\s+DPlayer\s*\([\s\S]*?url\s*:\s*['"]([^'"]+)['"]/);
+    if (dpMatch && dpMatch[1]) {
+      videoUrl = dpMatch[1];
+    }
+
+    // 2. 从 HTML 注释中提取 m3u8（常见于 JAVDay 页面）
     if (!videoUrl) {
       var commentMatch = html.match(/<!--\s*(https?:\/\/[^\s]+\.m3u8[^\s]*)\s*-->/i);
-      if (commentMatch) videoUrl = commentMatch[1];
+      if (commentMatch && commentMatch[1]) {
+        videoUrl = commentMatch[1];
+      }
     }
+
+    // 3. 裸 m3u8 URL
     if (!videoUrl) {
-      var globalMatch = html.match(/https?:\/\/[^"'\s]+\.m3u8[^"'\s]*/i);
-      if (globalMatch) videoUrl = globalMatch[0];
+      var m3u8Match = html.match(/['"](https?:\/\/[^'"]+\.m3u8[^'"]*)['"]/);
+      if (m3u8Match && m3u8Match[1]) {
+        videoUrl = m3u8Match[1];
+      }
     }
-    
-    if (!videoUrl) throw new Error("未找到视频地址");
-    videoUrl = normalizeUrl(videoUrl);
-    
+
+    // 4. <video src="..."> / <source src="...">
+    if (!videoUrl) {
+      var vsMatch = html.match(/<(?:video|source)[^>]+src\s*=\s*['"]([^'"]+)['"]/i);
+      if (vsMatch && vsMatch[1]) {
+        videoUrl = vsMatch[1];
+      }
+    }
+
+    if (!videoUrl) {
+      throw new Error("无法找到视频源");
+    }
+
+    // 提取标题
     var titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-    var title = titleMatch ? titleMatch[1].replace(/\s*[\|｜].*$/, "").trim() : "";
-    
+    var title = titleMatch ? titleMatch[1].replace(/\s*[-|｜].*$/, "").trim() : "";
+
+    console.log("loadDetail: videoUrl=" + (videoUrl ? "found" : "missing") + " title=" + title);
+
+    // 返回数据，增加必需的请求头以通过 CDN 防盗链
     return {
-      title: title,
+      title:    title,
       videoUrl: videoUrl,
       customHeaders: {
-        "Referer": fullLink,
-        "Origin": BASE_URL,
+        "Referer":    link,
+        "Origin":     BASE_URL,               // 新增 Origin，部分 CDN 需要
         "User-Agent": UA,
-        "Range": "bytes=0-"
+        "Range":      "bytes=0-",             // 关键！解决 404 问题
+        "Accept":     "*/*",
+        "Accept-Language": "zh-CN,zh;q=0.9"
       },
-      playUrls: [{
-        title: "HD",
-        url: videoUrl,
-        headers: {
-          "Referer": fullLink,
-          "User-Agent": UA,
-          "Range": "bytes=0-"
-        }
-      }]
     };
   } catch (err) {
-    console.error("loadDetail 失败: " + err.message);
-    // 返回一个错误视频，让播放器显示错误信息
-    return {
-      title: "播放失败: " + err.message,
-      videoUrl: "https://httpbin.org/status/404",
-      customHeaders: {},
-      playUrls: []
-    };
+    console.error("loadDetail error: " + err.message);
+    throw err;
   }
 }
