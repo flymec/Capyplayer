@@ -447,40 +447,39 @@ async function search(params) {
   }
 }
 
-async function loadDetail(link) {
-  try {
-    var html = await fetchHtml(link);
+async function getRealVideoUrl(html, link) {
+  // 1. 抓 id
+  var idMatch = link.match(/\/videos\/([^\/]+)\//);
+  var id = idMatch ? idMatch[1] : null;
 
-    var match = html.match(/var hlsUrl\s*=\s*['"]([^'"]+)['"]/);
-    if (!match || !match[1]) {
-      throw new Error("未匹配到 hlsUrl，页面结构可能已变更");
-    }
-    var hlsUrl = match[1];
+  if (!id) return null;
 
-    var titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-    var title = titleMatch ? titleMatch[1].replace(/\s*[\|｜]\s*Jable\.tv.*$/i, "").trim() : "";
+  // 2. 尝试常见API（关键）
+  var apis = [
+    BASE_URL + "/api/video?id=" + id,
+    BASE_URL + "/ajax/video/" + id,
+    BASE_URL + "/player/" + id
+  ];
 
-    console.log("loadDetail: hlsUrl=" + (hlsUrl ? "found" : "missing") + " title=" + title);
+  for (var i = 0; i < apis.length; i++) {
+    try {
+      var res = await Widget.http.get(apis[i], {
+        headers: {
+          "Referer": link,
+          "User-Agent": UA
+        }
+      });
 
-    var headers = {
-      "Referer":    link,
-      "User-Agent": UA,
-    };
+      var data = JSON.parse(res.data || "{}");
 
-    return {
-      title: title,
-      // mpv 用
-      videoUrl:      hlsUrl,
-      customHeaders: headers,
-      // mdk / exo 用
-      playUrls: [
-        {
-          title:   "HD",
-          url:     hlsUrl,
-          headers: headers,
-        },
-      ],
-    };
+      if (data.url && data.url.includes(".m3u8")) {
+        return data.url;
+      }
+    } catch (e) {}
+  }
+
+  return null;
+}
   } catch (err) {
     console.error("loadDetail error:", err.message);
     throw err;
