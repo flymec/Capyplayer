@@ -455,7 +455,7 @@ async function loadDetail(link) {
     var videoUrl = null;
 
     // =========================
-    // ✅ 1. DPlayer 精准解析
+    // ✅ 1. DPlayer解析
     // =========================
     var dpMatch = html.match(/video\s*:\s*\{[\s\S]*?url\s*:\s*['"]([^'"]+\.m3u8[^'"]*)['"]/);
     if (dpMatch && dpMatch[1]) {
@@ -464,74 +464,90 @@ async function loadDetail(link) {
     }
 
     // =========================
-    // ✅ 2. 全局 m3u8 捕获（强力）
+    // ✅ 2. 全局 m3u8 捕获
     // =========================
     if (!videoUrl) {
-      var m3u8Match = html.match(/https?:\/\/[^'"\s]+\.m3u8[^'"\s]*/g);
-      if (m3u8Match && m3u8Match.length > 0) {
+      var m3u8Match = html.match(/https?:\/\/[^'"\s]+\.m3u8[^'"\s]*/);
+      if (m3u8Match) {
         videoUrl = m3u8Match[0];
         console.log("命中 全局m3u8");
       }
     }
 
     // =========================
-    // ✅ 3. iframe 解析（备用）
+    // ❌ 没拿到直接失败
     // =========================
     if (!videoUrl) {
-      var iframeMatch = html.match(/<iframe[^>]+src=['"]([^'"]+)['"]/i);
-      if (iframeMatch && iframeMatch[1]) {
-        var iframeUrl = normalizeUrl(iframeMatch[1]);
-        console.log("命中 iframe，二次解析");
+      throw new Error("未找到m3u8");
+    }
 
-        var iframeHtml = await fetchHtml(iframeUrl);
+    // =========================
+    // 🚀 线路池（核心）
+    // =========================
+    var hostList = [
+      "javday.app",
+      "javday.homes",
+      "javday.xyz",
+      "javday.club"
+    ];
 
-        var iframeM3u8 = iframeHtml.match(/https?:\/\/[^'"\s]+\.m3u8[^'"\s]*/);
-        if (iframeM3u8) {
-          videoUrl = iframeM3u8[0];
+    async function testUrl(url) {
+      try {
+        var res = await Widget.http.get(url, {
+          headers: {
+            "Referer": link,
+            "Origin": BASE_URL,
+            "User-Agent": UA,
+          },
+        });
+        return res && res.ok;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    async function getValidUrl(rawUrl) {
+      var urlObj = rawUrl.match(/https?:\/\/([^\/]+)(\/.*)/);
+      if (!urlObj) return rawUrl;
+
+      var path = urlObj[2];
+
+      for (var i = 0; i < hostList.length; i++) {
+        var test = "https://" + hostList[i] + path;
+        console.log("测试线路:", test);
+
+        var ok = await testUrl(test);
+        if (ok) {
+          console.log("命中线路:", test);
+          return test;
         }
       }
+
+      return rawUrl;
     }
 
     // =========================
-    // ✅ 4. video/source 标签兜底
+    // ✅ 自动选线路
     // =========================
-    if (!videoUrl) {
-      var vsMatch = html.match(/<(?:video|source)[^>]+src\s*=\s*['"]([^'"]+)['"]/i);
-      if (vsMatch && vsMatch[1]) {
-        videoUrl = vsMatch[1];
-        console.log("命中 video标签");
-      }
-    }
+    videoUrl = await getValidUrl(videoUrl);
 
     // =========================
-    // ❌ 全失败
-    // =========================
-    if (!videoUrl) {
-      throw new Error("无法解析视频地址（可能被加密）");
-    }
-
-    // =========================
-    // ✅ URL 修复
-    // =========================
-    videoUrl = normalizeUrl(videoUrl);
-
-    // =========================
-    // ✅ 标题提取
+    // ✅ 标题
     // =========================
     var titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
     var title = titleMatch
       ? titleMatch[1].replace(/\s*[-|｜].*$/, "").trim()
       : "";
 
-    console.log("最终视频地址:", videoUrl);
+    console.log("最终播放地址:", videoUrl);
 
     return {
       title: title,
       videoUrl: videoUrl,
       customHeaders: {
         "Referer": link,
-        "User-Agent": UA,
         "Origin": BASE_URL,
+        "User-Agent": UA,
       },
     };
 
