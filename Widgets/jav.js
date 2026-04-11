@@ -452,43 +452,50 @@ async function loadDetail(link) {
     var html = await fetchHtml(link);
     var videoUrl = null;
 
-    // --- 方法1：匹配完整 m3u8 URL（涵盖 javday.homes 等 CDN 域名）---
-    // 匹配模式：https://任意域名/videos/哈希1/哈希2/index.m3u8
-    var m3u8Regex = /https?:\/\/[^"'\s]+\/videos\/[a-f0-9]+\/[a-f0-9]+\/index\.m3u8/gi;
-    var m3u8Matches = html.match(m3u8Regex);
-    if (m3u8Matches && m3u8Matches.length > 0) {
-        videoUrl = m3u8Matches[0];
+    // --- 策略1：直接匹配 DPlayer 的 url 配置（最精确）---
+    var dpUrlMatch = html.match(/url\s*:\s*['"]([^'"]*\.m3u8[^'"]*)['"]/i);
+    if (dpUrlMatch && dpUrlMatch[1]) {
+      videoUrl = dpUrlMatch[1];
+      console.log("提取自 DPlayer url:", videoUrl);
     }
 
-    // --- 方法2：通用 m3u8 链接提取（作为回退）---
+    // --- 策略2：匹配注释中的完整 m3u8 链接 ---
     if (!videoUrl) {
-        var genericMatch = html.match(/["'](https?:\/\/[^"'\s]+\.m3u8[^"'\s]*)["']/i);
-        if (genericMatch && genericMatch[1]) {
-            videoUrl = genericMatch[1];
+      // 匹配 <!-- https://.../index.m3u8 -->
+      var commentMatch = html.match(/<!--\s*(https?:\/\/[^\s]+\.m3u8[^\s]*)\s*-->/i);
+      if (commentMatch && commentMatch[1]) {
+        videoUrl = commentMatch[1];
+        console.log("提取自注释:", videoUrl);
+      }
+    }
+
+    // --- 策略3：通用 m3u8 链接提取 ---
+    if (!videoUrl) {
+      var genericMatch = html.match(/["'](https?:\/\/[^"'\s]+\.m3u8[^"'\s]*)["']/i);
+      if (genericMatch && genericMatch[1]) {
+        videoUrl = genericMatch[1];
+        console.log("提取自通用正则:", videoUrl);
+      }
+    }
+
+    // --- 策略4：从 iframe 中提取（如果存在）---
+    if (!videoUrl) {
+      var iframeMatch = html.match(/<iframe[^>]+src=['"]([^'"]+)['"]/i);
+      if (iframeMatch && iframeMatch[1]) {
+        var iframeUrl = normalizeUrl(iframeMatch[1]);
+        var iframeHtml = await fetchHtml(iframeUrl);
+        var iframeUrlMatch = iframeHtml.match(/url\s*:\s*['"]([^'"]*\.m3u8[^'"]*)['"]/i);
+        if (iframeUrlMatch && iframeUrlMatch[1]) {
+          videoUrl = iframeUrlMatch[1];
         }
-    }
-
-    // --- 方法3：从 iframe 中提取 ---
-    if (!videoUrl) {
-        var iframeMatch = html.match(/<iframe[^>]+src=['"]([^'"]+)['"]/i);
-        if (iframeMatch && iframeMatch[1]) {
-            var iframeUrl = normalizeUrl(iframeMatch[1]);
-            var iframeHtml = await fetchHtml(iframeUrl);
-            var iframeM3u8 = iframeHtml.match(/https?:\/\/[^"'\s]+\/videos\/[a-f0-9]+\/[a-f0-9]+\/index\.m3u8/i);
-            if (iframeM3u8) {
-                videoUrl = iframeM3u8[0];
-            } else {
-                var genericIframe = iframeHtml.match(/["'](https?:\/\/[^"'\s]+\.m3u8[^"'\s]*)["']/i);
-                if (genericIframe) videoUrl = genericIframe[1];
-            }
-        }
+      }
     }
 
     if (!videoUrl) {
-        throw new Error("未找到播放地址");
+      throw new Error("未找到播放地址，请检查页面结构是否变更");
     }
 
-    // 确保 URL 完整
+    // 确保 URL 完整（处理可能的相对路径）
     videoUrl = normalizeUrl(videoUrl);
 
     // 提取标题
@@ -496,25 +503,25 @@ async function loadDetail(link) {
     var title = titleMatch ? titleMatch[1].replace(/\s*[\|｜].*$/, "").trim() : "";
 
     return {
-        title: title,
-        videoUrl: videoUrl,
-        customHeaders: {
-            "Referer": link,
-            "User-Agent": UA,
-            "Origin": BASE_URL
-        },
-        playUrls: [{
-            title: "HD",
-            url: videoUrl,
-            headers: {
-                "Referer": link,
-                "User-Agent": UA,
-                "Origin": BASE_URL
-            }
-        }]
+      title: title,
+      videoUrl: videoUrl,
+      customHeaders: {
+        "Referer": link,
+        "User-Agent": UA,
+        "Origin": BASE_URL
+      },
+      playUrls: [{
+        title: "HD",
+        url: videoUrl,
+        headers: {
+          "Referer": link,
+          "User-Agent": UA,
+          "Origin": BASE_URL
+        }
+      }]
     };
-} catch (err) {
+  } catch (err) {
     console.error("loadDetail error:", err.message);
     throw err;
-}
+  }
 }
