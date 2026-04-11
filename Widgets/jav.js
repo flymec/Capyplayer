@@ -449,107 +449,87 @@ async function search(params) {
 
 
 
-// 辅助函数：带超时的 fetchHtml
 function fetchHtmlWithTimeout(url, timeoutMs) {
-  timeoutMs = timeoutMs || 10000; // 默认 10 秒
   return new Promise(function(resolve, reject) {
     var timer = setTimeout(function() {
-      reject(new Error("请求超时 (" + timeoutMs + "ms)"));
+      reject(new Error("请求超时"));
     }, timeoutMs);
-
-    fetchHtml(url)
-      .then(function(html) {
-        clearTimeout(timer);
-        resolve(html);
-      })
-      .catch(function(err) {
-        clearTimeout(timer);
-        reject(err);
-      });
+    
+    Widget.http.get(url, {
+      headers: {
+        "User-Agent": UA,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "zh-CN,zh;q=0.9",
+        "Referer": BASE_URL + "/"
+      }
+    }).then(function(res) {
+      clearTimeout(timer);
+      if (res.ok) {
+        resolve(res.data);
+      } else {
+        reject(new Error("HTTP " + res.status));
+      }
+    }).catch(function(err) {
+      clearTimeout(timer);
+      reject(err);
+    });
   });
 }
 
 async function loadDetail(link) {
   var fullLink = normalizeUrl(link);
-  console.log("loadDetail: 开始处理 " + fullLink);
-
-  // ---------- 1. 获取页面 HTML（设置 12 秒超时）----------
-  var html;
+  console.log("开始请求: " + fullLink);
+  
   try {
-    html = await fetchHtmlWithTimeout(fullLink, 12000);
-    console.log("loadDetail: 页面获取成功，长度=" + html.length);
-  } catch (e) {
-    console.error("loadDetail: 获取页面失败 - " + e.message);
-    throw new Error("网络超时，请检查网络或稍后重试");
-  }
-
-  // ---------- 2. 提取视频地址 ----------
-  var videoUrl = null;
-  try {
+    // 8秒超时，快速失败避免长时间卡死
+    var html = await fetchHtmlWithTimeout(fullLink, 8000);
+    console.log("页面获取成功，长度: " + html.length);
+    
+    var videoUrl = null;
     var dpMatch = html.match(/url\s*:\s*['"]([^'"]*\.m3u8[^'"]*)['"]/i);
-    if (dpMatch && dpMatch[1]) {
-      videoUrl = dpMatch[1];
-      console.log("loadDetail: 提取自 DPlayer url = " + videoUrl);
-    }
-
+    if (dpMatch) videoUrl = dpMatch[1];
     if (!videoUrl) {
       var commentMatch = html.match(/<!--\s*(https?:\/\/[^\s]+\.m3u8[^\s]*)\s*-->/i);
-      if (commentMatch && commentMatch[1]) {
-        videoUrl = commentMatch[1];
-        console.log("loadDetail: 提取自注释 = " + videoUrl);
-      }
+      if (commentMatch) videoUrl = commentMatch[1];
     }
-
     if (!videoUrl) {
       var globalMatch = html.match(/https?:\/\/[^"'\s]+\.m3u8[^"'\s]*/i);
-      if (globalMatch) {
-        videoUrl = globalMatch[0];
-        console.log("loadDetail: 提取自全局搜索 = " + videoUrl);
-      }
+      if (globalMatch) videoUrl = globalMatch[0];
     }
-  } catch (e) {
-    console.error("loadDetail: 提取视频地址时出错 - " + e.message);
+    
+    if (!videoUrl) throw new Error("未找到视频地址");
+    videoUrl = normalizeUrl(videoUrl);
+    
+    var titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    var title = titleMatch ? titleMatch[1].replace(/\s*[\|｜].*$/, "").trim() : "";
+    
+    return {
+      title: title,
+      videoUrl: videoUrl,
+      customHeaders: {
+        "Referer": fullLink,
+        "Origin": BASE_URL,
+        "User-Agent": UA,
+        "Range": "bytes=0-"
+      },
+      playUrls: [{
+        title: "HD",
+        url: videoUrl,
+        headers: {
+          "Referer": fullLink,
+          "User-Agent": UA,
+          "Range": "bytes=0-"
+        }
+      }]
+    };
+  } catch (err) {
+    console.error("loadDetail 失败: " + err.message);
+    // 返回一个错误视频，让播放器显示错误信息
+    return {
+      title: "播放失败: " + err.message,
+      videoUrl: "https://httpbin.org/status/404",
+      customHeaders: {},
+      playUrls: []
+    };
   }
-
-  if (!videoUrl) {
-    throw new Error("未找到播放地址，可能页面结构已变更");
-  }
-
-  videoUrl = normalizeUrl(videoUrl);
-  console.log("loadDetail: 最终视频地址 = " + videoUrl);
-
-  // ---------- 3. 构建请求头（保留 Range 解决 404）----------
-  var videoHeaders = {
-    "Referer": fullLink,
-    "Origin": BASE_URL,
-    "User-Agent": UA,
-    "Range": "bytes=0-",
-    "Accept": "*/*",
-    "Accept-Language": "zh-CN,zh;q=0.9"
-  };
-
-  // ---------- 4. 取消预检请求（它是超时的元凶之一）----------
-  // 不再进行 Widget.http.get(videoUrl) 预检，直接交由播放器处理
-  // 因为播放器自身有超时和重试机制，更健壮
-
-  // ---------- 5. 提取标题 ----------
-  var title = "";
-  var titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-  if (titleMatch && titleMatch[1]) {
-    title = titleMatch[1].replace(/\s*[\|｜].*$/, "").trim();
-  }
-
-  console.log("loadDetail: 标题 = " + title);
-
-  // ---------- 6. 返回数据 ----------
-  return {
-    title: title,
-    videoUrl: videoUrl,
-    customHeaders: videoHeaders,
-    playUrls: [{
-      title: "HD",
-      url: videoUrl,
-      headers: videoHeaders
-    }]
-  };
 }
