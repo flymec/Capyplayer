@@ -452,72 +452,53 @@ async function loadDetail(link) {
     var html = await fetchHtml(link);
     var videoUrl = null;
 
-    // --- 策略1：直接匹配 DPlayer 的 url 配置（最精确）---
-    var dpUrlMatch = html.match(/url\s*:\s*['"]([^'"]*\.m3u8[^'"]*)['"]/i);
-    if (dpUrlMatch && dpUrlMatch[1]) {
-      videoUrl = dpUrlMatch[1];
-      console.log("提取自 DPlayer url:", videoUrl);
-    }
+    // ... 你的提取逻辑（同前）...
 
-    // --- 策略2：匹配注释中的完整 m3u8 链接 ---
-    if (!videoUrl) {
-      // 匹配 <!-- https://.../index.m3u8 -->
-      var commentMatch = html.match(/<!--\s*(https?:\/\/[^\s]+\.m3u8[^\s]*)\s*-->/i);
-      if (commentMatch && commentMatch[1]) {
-        videoUrl = commentMatch[1];
-        console.log("提取自注释:", videoUrl);
-      }
-    }
+    if (!videoUrl) throw new Error("未找到播放地址");
 
-    // --- 策略3：通用 m3u8 链接提取 ---
-    if (!videoUrl) {
-      var genericMatch = html.match(/["'](https?:\/\/[^"'\s]+\.m3u8[^"'\s]*)["']/i);
-      if (genericMatch && genericMatch[1]) {
-        videoUrl = genericMatch[1];
-        console.log("提取自通用正则:", videoUrl);
-      }
-    }
-
-    // --- 策略4：从 iframe 中提取（如果存在）---
-    if (!videoUrl) {
-      var iframeMatch = html.match(/<iframe[^>]+src=['"]([^'"]+)['"]/i);
-      if (iframeMatch && iframeMatch[1]) {
-        var iframeUrl = normalizeUrl(iframeMatch[1]);
-        var iframeHtml = await fetchHtml(iframeUrl);
-        var iframeUrlMatch = iframeHtml.match(/url\s*:\s*['"]([^'"]*\.m3u8[^'"]*)['"]/i);
-        if (iframeUrlMatch && iframeUrlMatch[1]) {
-          videoUrl = iframeUrlMatch[1];
-        }
-      }
-    }
-
-    if (!videoUrl) {
-      throw new Error("未找到播放地址，请检查页面结构是否变更");
-    }
-
-    // 确保 URL 完整（处理可能的相对路径）
     videoUrl = normalizeUrl(videoUrl);
 
-    // 提取标题
+    // 构建完整的请求头，尽量模仿浏览器
+    var videoHeaders = {
+      "Referer": link,
+      "Origin": "https://javday.app",
+      "User-Agent": UA,
+      "Range": "bytes=0-",                    // 🔥 关键：必须添加
+      "Accept": "*/*",
+      "Accept-Language": "zh-CN,zh;q=0.9",
+      "Sec-Fetch-Dest": "video",
+      "Sec-Fetch-Mode": "no-cors",
+      "Sec-Fetch-Site": "cross-site",
+      // "Sec-Fetch-Storage-Access": "active", // 可选
+    };
+
+    // 可选：在脚本内部验证该 URL 是否可达（帮助调试）
+    // 注意：Widget.http 可能不支持设置 Sec-Fetch-*（会被浏览器自动管理），但至少带上 Range 和 Referer
+    try {
+      var testRes = await Widget.http.get(videoUrl, {
+        headers: {
+          "Referer": link,
+          "Range": "bytes=0-",
+          "User-Agent": UA,
+        }
+      });
+      console.log("M3U8 测试状态码:", testRes.status);
+    } catch (e) {
+      console.warn("M3U8 预检失败，但播放器可能仍能工作:", e.message);
+    }
+
+    // 提取标题...
     var titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
     var title = titleMatch ? titleMatch[1].replace(/\s*[\|｜].*$/, "").trim() : "";
 
     return {
       title: title,
       videoUrl: videoUrl,
-      customHeaders: {
-        "Referer": link,
-        "User-Agent": UA,
-        "Origin": BASE_URL
-      },
+      customHeaders: videoHeaders,
       playUrls: [{
         title: "HD",
         url: videoUrl,
-        headers: {
-          "Referer": link,
-          "User-Agent": UA,
-          "Origin": BASE_URL
-        }
+        headers: videoHeaders
       }]
     };
   } catch (err) {
