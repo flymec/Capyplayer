@@ -413,59 +413,55 @@ function extractVideoUrlFromHtml(html) {
   return null;
 }
 
-async function detail(id) {
-  const link = id.split("|")[1];
+async function loadDetail(link) {
+  try {
+    link = normalizeUrl(link);
+    var html = await fetchHtml(link);
 
-  const html = await Network.get(link);
-  const $ = Widget.html.load(html);
+    var videoUrl = null;
 
-  let videoUrl = null;
+    // 1. DPlayer new DPlayer({ ... url: '...' ... })
+    var dpMatch = html.match(/new\s+DPlayer\s*\([\s\S]*?url\s*:\s*['"]([^'"]+)['"]/);
+    if (dpMatch && dpMatch[1]) {
+      videoUrl = dpMatch[1];
+    }
 
-  // ✅ 1. 专杀：DPlayer解析（最关键）
-  $("script").each((i, el) => {
-    const txt = $(el).html();
-
-    if (txt && txt.includes("DPlayer")) {
-
-      // 精准提取 url
-      const match = txt.match(/url:\s*['"]([^'"]+)['"]/);
-
-      if (match) {
-        videoUrl = match[1];
+    // 2. 裸 m3u8 URL
+    if (!videoUrl) {
+      var m3u8Match = html.match(/['"](https?:\/\/[^'"]+\.m3u8[^'"]*)['"]/);
+      if (m3u8Match && m3u8Match[1]) {
+        videoUrl = m3u8Match[1];
       }
     }
-  });
 
-  // ✅ 2. 备用：m3u8扫描
-  if (!videoUrl) {
-    $("script").each((i, el) => {
-      const txt = $(el).html();
-      if (txt && txt.includes(".m3u8")) {
-        const m = txt.match(/https?:\/\/[^'"]+\.m3u8/);
-        if (m) videoUrl = m[0];
+    // 3. <video src="..."> / <source src="...">
+    if (!videoUrl) {
+      var vsMatch = html.match(/<(?:video|source)[^>]+src\s*=\s*['"]([^'"]+)['"]/i);
+      if (vsMatch && vsMatch[1]) {
+        videoUrl = vsMatch[1];
       }
-    });
-  }
-
-  // ✅ 3. 备用：video标签
-  if (!videoUrl) {
-    videoUrl =
-      $("video source").attr("src") ||
-      $("video").attr("src");
-  }
-
-  // ❌ 没拿到
-  if (!videoUrl) {
-    throw new Error("未找到播放地址");
-  }
-
-  return {
-    id,
-    type: "video",
-    url: videoUrl,
-    headers: {
-      Referer: link,
-      "User-Agent": "Mozilla/5.0"
     }
-  };
+
+    if (!videoUrl) {
+      throw new Error("无法找到视频源");
+    }
+
+    // 提取标题
+    var titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    var title = titleMatch ? titleMatch[1].replace(/\s*[-|｜].*$/, "").trim() : "";
+
+    console.log("loadDetail: videoUrl=" + (videoUrl ? "found" : "missing") + " title=" + title);
+
+    return {
+      title:    title,
+      videoUrl: videoUrl,
+      customHeaders: {
+        "Referer":    link,
+        "User-Agent": UA,
+      },
+    };
+  } catch (err) {
+    console.error("loadDetail error: " + err.message);
+    throw err;
+  }
 }
