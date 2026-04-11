@@ -447,42 +447,92 @@ async function search(params) {
   }
 }
 
-async function loadDetail(link) {
-  const fullLink = normalizeUrl(link);
-  const html = await httpGet(fullLink, fullLink);
-  const $ = Widget.html.load(html);
-
-  // 1. 提取视频 URL（请确保 extractVideoUrl 内部实现足够健壮）
-  const videoUrl = extractVideoUrl($);
-  if (!videoUrl) throw new Error("无法找到视频源");
-
-  // 2. 构建完整的浏览器风格请求头（重点：添加 Range）
-  const customHeaders = {
-    "Referer": fullLink,
-    "Origin": BASE_URL,
-    "User-Agent": CONFIG.USER_AGENT,
-    "Range": "bytes=0-",               // 🔥 解决 404 的关键
-    "Accept": "*/*",
-    "Accept-Language": "zh-CN,zh;q=0.9",
-    // 以下头在浏览器环境会自动添加，此处列出仅作参考
-    // "Sec-Fetch-Dest": "video",
-    // "Sec-Fetch-Mode": "no-cors",
-    // "Sec-Fetch-Site": "cross-site",
-  };
-
-  // 可选：快速测试视频地址可访问性
-  try {
-    const testRes = await Widget.http.get(videoUrl, { headers: customHeaders });
-    console.log("视频地址预检状态:", testRes.status);
-  } catch (e) {
-    console.warn("预检失败，播放器可能仍能工作:", e.message);
+// 辅助函数：从 HTML 字符串或 DOM 对象提取视频 m3u8 地址
+function extractVideoUrlFromHtml(html) {
+  var videoUrl = null;
+  
+  // 策略1：匹配 DPlayer 的 url 配置
+  var dpMatch = html.match(/url\s*:\s*['"]([^'"]*\.m3u8[^'"]*)['"]/i);
+  if (dpMatch && dpMatch[1]) {
+    videoUrl = dpMatch[1];
+    console.log("提取自 DPlayer url:", videoUrl);
+    return videoUrl;
   }
-
-  return {
-    id: fullLink,
-    type: "url",
-    videoUrl: videoUrl,
-    customHeaders: customHeaders,
-  };
+  
+  // 策略2：从 HTML 注释中提取（页面中有 <!-- https://...m3u8 -->）
+  var commentMatch = html.match(/<!--\s*(https?:\/\/[^\s]+\.m3u8[^\s]*)\s*-->/i);
+  if (commentMatch && commentMatch[1]) {
+    videoUrl = commentMatch[1];
+    console.log("提取自注释:", videoUrl);
+    return videoUrl;
+  }
+  
+  // 策略3：全局搜索 m3u8 链接
+  var globalMatch = html.match(/https?:\/\/[^"'\s]+\.m3u8[^"'\s]*/i);
+  if (globalMatch) {
+    videoUrl = globalMatch[0];
+    console.log("提取自全局搜索:", videoUrl);
+    return videoUrl;
+  }
+  
+  return videoUrl;
 }
- 
+
+// 主详情加载函数（替换原 loadDetail）
+async function loadDetail(link) {
+  try {
+    // 确保链接完整
+    var fullLink = normalizeUrl(link);
+    
+    // 获取详情页 HTML
+    var html = await fetchHtml(fullLink);
+    
+    // 提取视频地址
+    var videoUrl = extractVideoUrlFromHtml(html);
+    if (!videoUrl) {
+      throw new Error("未找到播放地址");
+    }
+    
+    // 确保 URL 绝对化
+    videoUrl = normalizeUrl(videoUrl);
+    
+    // 提取标题（与原脚本逻辑一致）
+    var titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    var title = titleMatch ? titleMatch[1].replace(/\s*[\|｜].*$/, "").trim() : "";
+    
+    // 构建请求头（重点：添加 Range 头解决 404）
+    var videoHeaders = {
+      "Referer": fullLink,
+      "Origin": BASE_URL,
+      "User-Agent": UA,
+      "Range": "bytes=0-",          // 关键！缺少此头会导致 CDN 返回 404
+      "Accept": "*/*",
+      "Accept-Language": "zh-CN,zh;q=0.9"
+    };
+    
+    // 可选：预检视频地址可用性（仅用于调试）
+    try {
+      var testRes = await Widget.http.get(videoUrl, {
+        headers: videoHeaders
+      });
+      console.log("视频地址预检状态码: " + testRes.status);
+    } catch (e) {
+      console.warn("预检失败，但播放器可能仍能工作: " + e.message);
+    }
+    
+    // 返回符合 Widget 规范的结构
+    return {
+      title: title,
+      videoUrl: videoUrl,
+      customHeaders: videoHeaders,
+      playUrls: [{
+        title: "HD",
+        url: videoUrl,
+        headers: videoHeaders
+      }]
+    };
+  } catch (err) {
+    console.error("loadDetail error: " + err.message);
+    throw err;
+  }
+}
