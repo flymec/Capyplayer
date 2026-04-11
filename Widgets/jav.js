@@ -462,15 +462,7 @@ async function loadDetail(link) {
       videoUrl = dpMatch[1];
     }
 
-    // 2. 从 HTML 注释中提取 m3u8（常见于 JAVDay 页面）
-    if (!videoUrl) {
-      var commentMatch = html.match(/<!--\s*(https?:\/\/[^\s]+\.m3u8[^\s]*)\s*-->/i);
-      if (commentMatch && commentMatch[1]) {
-        videoUrl = commentMatch[1];
-      }
-    }
-
-    // 3. 裸 m3u8 URL
+    // 2. 裸 m3u8 URL
     if (!videoUrl) {
       var m3u8Match = html.match(/['"](https?:\/\/[^'"]+\.m3u8[^'"]*)['"]/);
       if (m3u8Match && m3u8Match[1]) {
@@ -478,7 +470,7 @@ async function loadDetail(link) {
       }
     }
 
-    // 4. <video src="..."> / <source src="...">
+    // 3. <video src="..."> / <source src="...">
     if (!videoUrl) {
       var vsMatch = html.match(/<(?:video|source)[^>]+src\s*=\s*['"]([^'"]+)['"]/i);
       if (vsMatch && vsMatch[1]) {
@@ -496,17 +488,12 @@ async function loadDetail(link) {
 
     console.log("loadDetail: videoUrl=" + (videoUrl ? "found" : "missing") + " title=" + title);
 
-    // 返回数据，增加必需的请求头以通过 CDN 防盗链
     return {
       title:    title,
       videoUrl: videoUrl,
       customHeaders: {
         "Referer":    link,
-        "Origin":     BASE_URL,               // 新增 Origin，部分 CDN 需要
         "User-Agent": UA,
-        "Range":      "bytes=0-",             // 关键！解决 404 问题
-        "Accept":     "*/*",
-        "Accept-Language": "zh-CN,zh;q=0.9"
       },
     };
   } catch (err) {
