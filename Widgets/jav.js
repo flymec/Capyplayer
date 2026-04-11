@@ -481,3 +481,8 @@ async function loadDetail(link) {
         },
       ],
     };
+  } catch (err) {
+    console.error("loadDetail error: " + err.message);
+    throw err;
+  }
+}
