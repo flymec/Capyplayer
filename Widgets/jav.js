@@ -447,36 +447,7 @@ async function search(params) {
   }
 }
 
-// 辅助函数：从 HTML 字符串或 DOM 对象提取视频 m3u8 地址
-function extractVideoUrlFromHtml(html) {
-  var videoUrl = null;
-  
-  // 策略1：匹配 DPlayer 的 url 配置
-  var dpMatch = html.match(/url\s*:\s*['"]([^'"]*\.m3u8[^'"]*)['"]/i);
-  if (dpMatch && dpMatch[1]) {
-    videoUrl = dpMatch[1];
-    console.log("提取自 DPlayer url:", videoUrl);
-    return videoUrl;
-  }
-  
-  // 策略2：从 HTML 注释中提取（页面中有 <!-- https://...m3u8 -->）
-  var commentMatch = html.match(/<!--\s*(https?:\/\/[^\s]+\.m3u8[^\s]*)\s*-->/i);
-  if (commentMatch && commentMatch[1]) {
-    videoUrl = commentMatch[1];
-    console.log("提取自注释:", videoUrl);
-    return videoUrl;
-  }
-  
-  // 策略3：全局搜索 m3u8 链接
-  var globalMatch = html.match(/https?:\/\/[^"'\s]+\.m3u8[^"'\s]*/i);
-  if (globalMatch) {
-    videoUrl = globalMatch[0];
-    console.log("提取自全局搜索:", videoUrl);
-    return videoUrl;
-  }
-  
-  return videoUrl;
-}
+
 
 // 主详情加载函数（替换原 loadDetail）
 async function loadDetail(link) {
