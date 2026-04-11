@@ -501,6 +501,9 @@ async function loadDetail(link) {
         url: videoUrl,
         headers: headers,
       },
-    ],
-  };
+    };
+  } catch (err) {
+    console.error("loadDetail error: " + err.message);
+    throw err;
+  }
 }
