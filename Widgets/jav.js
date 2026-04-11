@@ -448,59 +448,43 @@ async function search(params) {
 }
 
 async function loadDetail(link) {
+  const fullLink = normalizeUrl(link);
+  const html = await httpGet(fullLink, fullLink);
+  const $ = Widget.html.load(html);
+
+  // 1. 提取视频 URL（请确保 extractVideoUrl 内部实现足够健壮）
+  const videoUrl = extractVideoUrl($);
+  if (!videoUrl) throw new Error("无法找到视频源");
+
+  // 2. 构建完整的浏览器风格请求头（重点：添加 Range）
+  const customHeaders = {
+    "Referer": fullLink,
+    "Origin": BASE_URL,
+    "User-Agent": CONFIG.USER_AGENT,
+    "Range": "bytes=0-",               // 🔥 解决 404 的关键
+    "Accept": "*/*",
+    "Accept-Language": "zh-CN,zh;q=0.9",
+    // 以下头在浏览器环境会自动添加，此处列出仅作参考
+    // "Sec-Fetch-Dest": "video",
+    // "Sec-Fetch-Mode": "no-cors",
+    // "Sec-Fetch-Site": "cross-site",
+  };
+
+  // 可选：快速测试视频地址可访问性
   try {
-    var html = await fetchHtml(link);
-    var videoUrl = null;
+    const testRes = await Widget.http.get(videoUrl, { headers: customHeaders });
+    console.log("视频地址预检状态:", testRes.status);
+  } catch (e) {
+    console.warn("预检失败，播放器可能仍能工作:", e.message);
+  }
 
-    // ... 你的提取逻辑（同前）...
-
-    if (!videoUrl) throw new Error("未找到播放地址");
-
-    videoUrl = normalizeUrl(videoUrl);
-
-    // 构建完整的请求头，尽量模仿浏览器
-    var videoHeaders = {
-      "Referer": link,
-      "Origin": "https://javday.app",
-      "User-Agent": UA,
-      "Range": "bytes=0-",                    // 🔥 关键：必须添加
-      "Accept": "*/*",
-      "Accept-Language": "zh-CN,zh;q=0.9",
-      "Sec-Fetch-Dest": "video",
-      "Sec-Fetch-Mode": "no-cors",
-      "Sec-Fetch-Site": "cross-site",
-      // "Sec-Fetch-Storage-Access": "active", // 可选
-    };
-
-    // 可选：在脚本内部验证该 URL 是否可达（帮助调试）
-    // 注意：Widget.http 可能不支持设置 Sec-Fetch-*（会被浏览器自动管理），但至少带上 Range 和 Referer
-    try {
-      var testRes = await Widget.http.get(videoUrl, {
-        headers: {
-          "Referer": link,
-          "Range": "bytes=0-",
-          "User-Agent": UA,
-        }
-      });
-      console.log("M3U8 测试状态码:", testRes.status);
-    } catch (e) {
-      console.warn("M3U8 预检失败，但播放器可能仍能工作:", e.message);
-    }
-
-    // 提取标题...
-    var titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-    var title = titleMatch ? titleMatch[1].replace(/\s*[\|｜].*$/, "").trim() : "";
-
-    return {
-      title: title,
-      videoUrl: videoUrl,
-      customHeaders: videoHeaders,
-      playUrls: [{
-        title: "HD",
-        url: videoUrl,
-        headers: videoHeaders
-      }]
-    };
+  return {
+    id: fullLink,
+    type: "url",
+    videoUrl: videoUrl,
+    customHeaders: customHeaders,
+  };
+}
   } catch (err) {
     console.error("loadDetail error:", err.message);
     throw err;
