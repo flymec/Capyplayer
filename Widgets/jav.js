@@ -448,20 +448,36 @@ async function search(params) {
 }
 
 async function loadDetail(link) {
-  const fullLink = normalizeUrl(link);
-  const html = await httpGet(fullLink, fullLink);
-  const $ = Widget.html.load(html);
+  try {
+    var html = await fetchHtml(link);
 
-  const videoUrl = extractVideoUrl($);
-  if (!videoUrl) throw new Error("无法找到视频源");
+    var match = html.match(/var hlsUrl\s*=\s*['"]([^'"]+)['"]/);
+    if (!match || !match[1]) {
+      throw new Error("未匹配到 hlsUrl，页面结构可能已变更");
+    }
+    var hlsUrl = match[1];
 
-  return {
-    id: fullLink,
-    type: "url",
-    videoUrl: videoUrl,
-    customHeaders: {
-      Referer: fullLink,
-      "User-Agent": CONFIG.USER_AGENT,
-    },
-  };
-}
+    var titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    var title = titleMatch ? titleMatch[1].replace(/\s*[\|｜]\s*Jable\.tv.*$/i, "").trim() : "";
+
+    console.log("loadDetail: hlsUrl=" + (hlsUrl ? "found" : "missing") + " title=" + title);
+
+    var headers = {
+      "Referer":    link,
+      "User-Agent": UA,
+    };
+
+    return {
+      title: title,
+      // mpv 用
+      videoUrl:      hlsUrl,
+      customHeaders: headers,
+      // mdk / exo 用
+      playUrls: [
+        {
+          title:   "HD",
+          url:     hlsUrl,
+          headers: headers,
+        },
+      ],
+    };
