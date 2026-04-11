@@ -447,112 +447,36 @@ async function search(params) {
   }
 }
 
-async function loadDetail(link) {
-  try {
-    link = normalizeUrl(link);
-    var html = await fetchHtml(link);
+async function getRealVideoUrl(html, link) {
+  // 1. 抓 id
+  var idMatch = link.match(/\/videos\/([^\/]+)\//);
+  var id = idMatch ? idMatch[1] : null;
 
-    var videoUrl = null;
+  if (!id) return null;
 
-    // =========================
-    // ✅ 1. DPlayer解析
-    // =========================
-    var dpMatch = html.match(/video\s*:\s*\{[\s\S]*?url\s*:\s*['"]([^'"]+\.m3u8[^'"]*)['"]/);
-    if (dpMatch && dpMatch[1]) {
-      videoUrl = dpMatch[1];
-      console.log("命中 DPlayer");
-    }
+  // 2. 尝试常见API（关键）
+  var apis = [
+    BASE_URL + "/api/video?id=" + id,
+    BASE_URL + "/ajax/video/" + id,
+    BASE_URL + "/player/" + id
+  ];
 
-    // =========================
-    // ✅ 2. 全局 m3u8 捕获
-    // =========================
-    if (!videoUrl) {
-      var m3u8Match = html.match(/https?:\/\/[^'"\s]+\.m3u8[^'"\s]*/);
-      if (m3u8Match) {
-        videoUrl = m3u8Match[0];
-        console.log("命中 全局m3u8");
-      }
-    }
-
-    // =========================
-    // ❌ 没拿到直接失败
-    // =========================
-    if (!videoUrl) {
-      throw new Error("未找到m3u8");
-    }
-
-    // =========================
-    // 🚀 线路池（核心）
-    // =========================
-    var hostList = [
-      "javday.app",
-      "javday.homes",
-      "javday.xyz",
-      "javday.club"
-    ];
-
-    async function testUrl(url) {
-      try {
-        var res = await Widget.http.get(url, {
-          headers: {
-            "Referer": link,
-            "Origin": BASE_URL,
-            "User-Agent": UA,
-          },
-        });
-        return res && res.ok;
-      } catch (e) {
-        return false;
-      }
-    }
-
-    async function getValidUrl(rawUrl) {
-      var urlObj = rawUrl.match(/https?:\/\/([^\/]+)(\/.*)/);
-      if (!urlObj) return rawUrl;
-
-      var path = urlObj[2];
-
-      for (var i = 0; i < hostList.length; i++) {
-        var test = "https://" + hostList[i] + path;
-        console.log("测试线路:", test);
-
-        var ok = await testUrl(test);
-        if (ok) {
-          console.log("命中线路:", test);
-          return test;
+  for (var i = 0; i < apis.length; i++) {
+    try {
+      var res = await Widget.http.get(apis[i], {
+        headers: {
+          "Referer": link,
+          "User-Agent": UA
         }
+      });
+
+      var data = JSON.parse(res.data || "{}");
+
+      if (data.url && data.url.includes(".m3u8")) {
+        return data.url;
       }
-
-      return rawUrl;
-    }
-
-    // =========================
-    // ✅ 自动选线路
-    // =========================
-    videoUrl = await getValidUrl(videoUrl);
-
-    // =========================
-    // ✅ 标题
-    // =========================
-    var titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-    var title = titleMatch
-      ? titleMatch[1].replace(/\s*[-|｜].*$/, "").trim()
-      : "";
-
-    console.log("最终播放地址:", videoUrl);
-
-    return {
-      title: title,
-      videoUrl: videoUrl,
-      customHeaders: {
-        "Referer": link,
-        "Origin": BASE_URL,
-        "User-Agent": UA,
-      },
-    };
-
-  } catch (err) {
-    console.error("loadDetail error:", err.message);
-    throw err;
+    } catch (e) {}
   }
+
+  return null;
 }
