@@ -451,66 +451,56 @@ async function search(params) {
 
 async function loadDetail(link) {
   try {
-    link = normalizeUrl(link);
     var html = await fetchHtml(link);
 
+    var id = extractId(link);
     var videoUrl = null;
 
-    // 1. DPlayer new DPlayer({ ... url: '...' ... })
-    var dpMatch = html.match(/new\s+DPlayer\s*\([\s\S]*?url\s*:\s*['"]([^'"]+)['"]/);
-    if (dpMatch && dpMatch[1]) {
-      videoUrl = dpMatch[1];
+    // =========================
+    // 1. HTML直接抓（备用）
+    // =========================
+    var m3u8Match = html.match(/https?:\/\/[^'"\s]+\.m3u8[^'"\s]*/);
+    if (m3u8Match) {
+      videoUrl = m3u8Match[0];
     }
 
-    // 2. 从 HTML 注释中提取 m3u8（常见于 JAVDay 页面）
+    // =========================
+    // 2. API抓取（核心）
+    // =========================
+    if (!videoUrl && id) {
+      videoUrl = await fetchFromApis(id, link);
+    }
+
+    // =========================
+    // 3. iframe兜底
+    // =========================
     if (!videoUrl) {
-      var commentMatch = html.match(/<!--\s*(https?:\/\/[^\s]+\.m3u8[^\s]*)\s*-->/i);
-      if (commentMatch && commentMatch[1]) {
-        videoUrl = commentMatch[1];
+      var iframe = html.match(/<iframe[^>]+src=['"]([^'"]+)['"]/i);
+      if (iframe) {
+        var iframeHtml = await fetchHtml(normalizeUrl(iframe[1]));
+        var m = iframeHtml.match(/https?:\/\/[^'"\s]+\.m3u8[^'"\s]*/);
+        if (m) videoUrl = m[0];
       }
     }
 
-    // 3. 裸 m3u8 URL
     if (!videoUrl) {
-      var m3u8Match = html.match(/['"](https?:\/\/[^'"]+\.m3u8[^'"]*)['"]/);
-      if (m3u8Match && m3u8Match[1]) {
-        videoUrl = m3u8Match[1];
-      }
+      throw new Error("无法获取播放源（API未暴露或加密）");
     }
 
-    // 4. <video src="..."> / <source src="...">
-    if (!videoUrl) {
-      var vsMatch = html.match(/<(?:video|source)[^>]+src\s*=\s*['"]([^'"]+)['"]/i);
-      if (vsMatch && vsMatch[1]) {
-        videoUrl = vsMatch[1];
-      }
-    }
-
-    if (!videoUrl) {
-      throw new Error("无法找到视频源");
-    }
-
-    // 提取标题
     var titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-    var title = titleMatch ? titleMatch[1].replace(/\s*[-|｜].*$/, "").trim() : "";
+    var title = titleMatch ? titleMatch[1].replace(/\s*[\|｜].*$/, "") : "";
 
-    console.log("loadDetail: videoUrl=" + (videoUrl ? "found" : "missing") + " title=" + title);
-
-    // 返回数据，增加必需的请求头以通过 CDN 防盗链
     return {
-      title:    title,
+      title: title,
       videoUrl: videoUrl,
       customHeaders: {
-        "Referer":    link,
-        "Origin":     BASE_URL,               // 新增 Origin，部分 CDN 需要
+        Referer: link,
         "User-Agent": UA,
-        "Range":      "bytes=0-",             // 关键！解决 404 问题
-        "Accept":     "*/*",
-        "Accept-Language": "zh-CN,zh;q=0.9"
+        Origin: BASE_URL,
       },
     };
-  } catch (err) {
-    console.error("loadDetail error: " + err.message);
-    throw err;
+  } catch (e) {
+    console.error("loadDetail error:", e.message);
+    throw e;
   }
 }
