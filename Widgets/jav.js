@@ -450,79 +450,71 @@ async function search(params) {
 async function loadDetail(link) {
   try {
     var html = await fetchHtml(link);
-
     var videoUrl = null;
 
-    // =========================
-    // 1. DPlayer 解析（重点）
-    // =========================
-    var dpMatch = html.match(/video\s*:\s*\{[\s\S]*?url\s*:\s*['"]([^'"]+\.m3u8[^'"]*)['"]/);
-    if (dpMatch && dpMatch[1]) {
-      videoUrl = dpMatch[1];
+    // --- 方法1：匹配完整 m3u8 URL（涵盖 javday.homes 等 CDN 域名）---
+    // 匹配模式：https://任意域名/videos/哈希1/哈希2/index.m3u8
+    var m3u8Regex = /https?:\/\/[^"'\s]+\/videos\/[a-f0-9]+\/[a-f0-9]+\/index\.m3u8/gi;
+    var m3u8Matches = html.match(m3u8Regex);
+    if (m3u8Matches && m3u8Matches.length > 0) {
+        videoUrl = m3u8Matches[0];
     }
 
-    // =========================
-    // 2. 全局 m3u8
-    // =========================
+    // --- 方法2：通用 m3u8 链接提取（作为回退）---
     if (!videoUrl) {
-      var m3u8Match = html.match(/https?:\/\/[^'"\s]+\.m3u8[^'"\s]*/);
-      if (m3u8Match) {
-        videoUrl = m3u8Match[0];
-      }
-    }
-
-    // =========================
-    // 3. iframe 兜底
-    // =========================
-    if (!videoUrl) {
-      var iframeMatch = html.match(/<iframe[^>]+src=['"]([^'"]+)['"]/i);
-      if (iframeMatch && iframeMatch[1]) {
-        var iframeHtml = await fetchHtml(normalizeUrl(iframeMatch[1]));
-        var iframeM3u8 = iframeHtml.match(/https?:\/\/[^'"\s]+\.m3u8[^'"\s]*/);
-        if (iframeM3u8) {
-          videoUrl = iframeM3u8[0];
+        var genericMatch = html.match(/["'](https?:\/\/[^"'\s]+\.m3u8[^"'\s]*)["']/i);
+        if (genericMatch && genericMatch[1]) {
+            videoUrl = genericMatch[1];
         }
-      }
     }
 
-    // =========================
-    // ❌ 仍然失败
-    // =========================
+    // --- 方法3：从 iframe 中提取 ---
     if (!videoUrl) {
-      throw new Error("未找到播放地址（可能是API动态加载）");
+        var iframeMatch = html.match(/<iframe[^>]+src=['"]([^'"]+)['"]/i);
+        if (iframeMatch && iframeMatch[1]) {
+            var iframeUrl = normalizeUrl(iframeMatch[1]);
+            var iframeHtml = await fetchHtml(iframeUrl);
+            var iframeM3u8 = iframeHtml.match(/https?:\/\/[^"'\s]+\/videos\/[a-f0-9]+\/[a-f0-9]+\/index\.m3u8/i);
+            if (iframeM3u8) {
+                videoUrl = iframeM3u8[0];
+            } else {
+                var genericIframe = iframeHtml.match(/["'](https?:\/\/[^"'\s]+\.m3u8[^"'\s]*)["']/i);
+                if (genericIframe) videoUrl = genericIframe[1];
+            }
+        }
     }
 
-    // =========================
-    // 标题
-    // =========================
+    if (!videoUrl) {
+        throw new Error("未找到播放地址");
+    }
+
+    // 确保 URL 完整
+    videoUrl = normalizeUrl(videoUrl);
+
+    // 提取标题
     var titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-    var title = titleMatch
-      ? titleMatch[1].replace(/\s*[\|｜].*$/, "").trim()
-      : "";
+    var title = titleMatch ? titleMatch[1].replace(/\s*[\|｜].*$/, "").trim() : "";
 
     return {
-      title: title,
-      videoUrl: videoUrl,
-      customHeaders: {
-        "Referer": link,
-        "User-Agent": UA,
-        "Origin": BASE_URL
-      },
-      playUrls: [
-        {
-          title: "HD",
-          url: videoUrl,
-          headers: {
+        title: title,
+        videoUrl: videoUrl,
+        customHeaders: {
             "Referer": link,
             "User-Agent": UA,
             "Origin": BASE_URL
-          }
-        }
-      ]
+        },
+        playUrls: [{
+            title: "HD",
+            url: videoUrl,
+            headers: {
+                "Referer": link,
+                "User-Agent": UA,
+                "Origin": BASE_URL
+            }
+        }]
     };
-
-  } catch (err) {
+} catch (err) {
     console.error("loadDetail error:", err.message);
     throw err;
-  }
+}
 }
