@@ -451,59 +451,101 @@ async function search(params) {
 
 // 主详情加载函数（替换原 loadDetail）
 async function loadDetail(link) {
+  var fullLink = normalizeUrl(link);
+  console.log("loadDetail: 开始处理 " + fullLink);
+
+  // ---------- 1. 获取页面 HTML ----------
+  var html;
   try {
-    // 确保链接完整
-    var fullLink = normalizeUrl(link);
-    
-    // 获取详情页 HTML
-    var html = await fetchHtml(fullLink);
-    
-    // 提取视频地址
-    var videoUrl = extractVideoUrlFromHtml(html);
-    if (!videoUrl) {
-      throw new Error("未找到播放地址");
-    }
-    
-    // 确保 URL 绝对化
-    videoUrl = normalizeUrl(videoUrl);
-    
-    // 提取标题（与原脚本逻辑一致）
-    var titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-    var title = titleMatch ? titleMatch[1].replace(/\s*[\|｜].*$/, "").trim() : "";
-    
-    // 构建请求头（重点：添加 Range 头解决 404）
-    var videoHeaders = {
-      "Referer": fullLink,
-      "Origin": BASE_URL,
-      "User-Agent": UA,
-      "Range": "bytes=0-",          // 关键！缺少此头会导致 CDN 返回 404
-      "Accept": "*/*",
-      "Accept-Language": "zh-CN,zh;q=0.9"
-    };
-    
-    // 可选：预检视频地址可用性（仅用于调试）
-    try {
-      var testRes = await Widget.http.get(videoUrl, {
-        headers: videoHeaders
-      });
-      console.log("视频地址预检状态码: " + testRes.status);
-    } catch (e) {
-      console.warn("预检失败，但播放器可能仍能工作: " + e.message);
-    }
-    
-    // 返回符合 Widget 规范的结构
-    return {
-      title: title,
-      videoUrl: videoUrl,
-      customHeaders: videoHeaders,
-      playUrls: [{
-        title: "HD",
-        url: videoUrl,
-        headers: videoHeaders
-      }]
-    };
-  } catch (err) {
-    console.error("loadDetail error: " + err.message);
-    throw err;
+    html = await fetchHtml(fullLink);
+    console.log("loadDetail: 页面获取成功，长度=" + html.length);
+  } catch (e) {
+    console.error("loadDetail: 获取页面失败 - " + e.message);
+    throw new Error("网络错误，无法加载视频页");
   }
+
+  // ---------- 2. 提取视频地址 ----------
+  var videoUrl = null;
+  try {
+    // 策略1：DPlayer url
+    var dpMatch = html.match(/url\s*:\s*['"]([^'"]*\.m3u8[^'"]*)['"]/i);
+    if (dpMatch && dpMatch[1]) {
+      videoUrl = dpMatch[1];
+      console.log("loadDetail: 提取自 DPlayer url = " + videoUrl);
+    }
+
+    // 策略2：HTML 注释
+    if (!videoUrl) {
+      var commentMatch = html.match(/<!--\s*(https?:\/\/[^\s]+\.m3u8[^\s]*)\s*-->/i);
+      if (commentMatch && commentMatch[1]) {
+        videoUrl = commentMatch[1];
+        console.log("loadDetail: 提取自注释 = " + videoUrl);
+      }
+    }
+
+    // 策略3：全局搜索
+    if (!videoUrl) {
+      var globalMatch = html.match(/https?:\/\/[^"'\s]+\.m3u8[^"'\s]*/i);
+      if (globalMatch) {
+        videoUrl = globalMatch[0];
+        console.log("loadDetail: 提取自全局搜索 = " + videoUrl);
+      }
+    }
+  } catch (e) {
+    console.error("loadDetail: 提取视频地址时出错 - " + e.message);
+  }
+
+  if (!videoUrl) {
+    console.error("loadDetail: 未能从页面中提取到视频地址");
+    throw new Error("未找到播放地址，可能页面结构已变更");
+  }
+
+  videoUrl = normalizeUrl(videoUrl);
+  console.log("loadDetail: 最终视频地址 = " + videoUrl);
+
+  // ---------- 3. 构建请求头 ----------
+  var videoHeaders = {
+    "Referer": fullLink,
+    "Origin": BASE_URL,
+    "User-Agent": UA,
+    "Range": "bytes=0-",
+    "Accept": "*/*",
+    "Accept-Language": "zh-CN,zh;q=0.9"
+  };
+
+  // ---------- 4. （可选）预检视频地址可用性 ----------
+  try {
+    var testRes = await Widget.http.get(videoUrl, { headers: videoHeaders });
+    console.log("loadDetail: 预检状态码 = " + testRes.status);
+    if (testRes.status !== 200) {
+      console.warn("loadDetail: 预检非200，但播放器可能仍能处理");
+    }
+  } catch (e) {
+    console.warn("loadDetail: 预检请求失败 - " + e.message + "，将直接交由播放器尝试");
+  }
+
+  // ---------- 5. 提取标题 ----------
+  var title = "";
+  var titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  if (titleMatch && titleMatch[1]) {
+    title = titleMatch[1].replace(/\s*[\|｜].*$/, "").trim();
+  }
+  console.log("loadDetail: 标题 = " + title);
+
+  // ---------- 6. 返回数据（兼容两种常见格式） ----------
+  return {
+    title: title,
+    videoUrl: videoUrl,
+    customHeaders: videoHeaders,
+    playUrls: [{
+      title: "HD",
+      url: videoUrl,
+      headers: videoHeaders
+    }],
+    // 有些播放器期望 sources 字段，一并提供
+    sources: [{
+      url: videoUrl,
+      headers: videoHeaders
+    }]
+  };
 }
