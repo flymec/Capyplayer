@@ -19,7 +19,7 @@ var WidgetMetadata = {
         {
           name: "keyword",
           title: "女優/番號/關鍵字搜索…",
-          type: "input",
+          type: "string",
           value: "",
           description: "女優/番號/關鍵字搜索…",
         },
