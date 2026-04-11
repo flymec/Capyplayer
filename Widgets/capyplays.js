@@ -610,10 +610,9 @@ var WidgetMetadata = {
   ],
 };
 
+// ── 工具函数 ──────────────────────────────────────────────────
 
-// ========== 工具函数 ==========
 var UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36";
-var TIMEOUT = 10000; // 10 秒超时
 
 function safeJson(data) {
   if (typeof data === "string") {
@@ -626,149 +625,118 @@ function ensureArray(v) {
   return Array.isArray(v) ? v : [];
 }
 
-/**
- * 安全拼接 URL 参数
- */
-function appendParams(baseUrl, params) {
-  if (!params || Object.keys(params).length === 0) return baseUrl;
-  var hasQuery = baseUrl.indexOf('?') !== -1;
-  var separator = hasQuery ? '&' : '?';
-  var parts = [];
-  for (var key in params) {
-    if (params.hasOwnProperty(key) && params[key] !== undefined && params[key] !== '') {
-      parts.push(encodeURIComponent(key) + '=' + encodeURIComponent(params[key]));
-    }
-  }
-  if (parts.length === 0) return baseUrl;
-  return baseUrl + separator + parts.join('&');
-}
+// ── HTML 解析（使用 Widget.dom）─────────────────────────────
 
-/**
- * 带超时的网络请求
- */
-async function fetchHtml(url) {
-  var controller = new AbortController();
-  var timeoutId = setTimeout(() => controller.abort(), TIMEOUT);
-
-  try {
-    var response = await Widget.http.get(url, {
-      headers: {
-        "User-Agent": UA,
-        "Referer": "https://jable.tv/",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-      },
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response || !response.ok) {
-      throw new Error("HTTP " + (response ? response.status : "?") + " - " + url);
-    }
-    if (typeof response.data !== "string" || response.data.length === 0) {
-      throw new Error("无法获取有效的 HTML 内容: " + url);
-    }
-    return response.data;
-  } catch (err) {
-    clearTimeout(timeoutId);
-    if (err.name === 'AbortError') {
-      throw new Error("请求超时: " + url);
-    }
-    throw err;
-  }
-}
-
-// ========== HTML 解析 ==========
 function parseHtml(htmlContent) {
   var items = [];
-  var docId = null;
+  var docId = Widget.dom.parse(htmlContent);
 
   try {
-    docId = Widget.dom.parse(htmlContent);
     var cardNodes = Widget.dom.select(docId, ".video-img-box");
     console.log("parseHtml: found " + cardNodes.length + " cards");
 
     for (var i = 0; i < cardNodes.length; i++) {
-      var card = cardNodes[i];
-      var titleNode = Widget.dom.select(card, ".title a")[0];
-      if (!titleNode) continue;
+      var cardNode = cardNodes[i];
 
-      var url = Widget.dom.attr(titleNode, "href") || "";
-      if (!url || url.indexOf("jable.tv") === -1) continue;
+      var cardDocId = Widget.dom.parse(cardNode.outerHtml);
+      try {
+        var titleNodes    = Widget.dom.select(cardDocId, ".title a");
+        var imgNodes      = Widget.dom.select(cardDocId, "img");
+        var durationNodes = Widget.dom.select(cardDocId, ".absolute-bottom-right .label");
 
-      var title = Widget.dom.text(titleNode).trim();
-      var imgNodes = Widget.dom.select(card, "img");
-      var poster = "", preview = "";
-      for (var j = 0; j < imgNodes.length; j++) {
-        var src = Widget.dom.attr(imgNodes[j], "data-src") || Widget.dom.attr(imgNodes[j], "src");
-        if (src) {
-          poster = src;
-          preview = Widget.dom.attr(imgNodes[j], "data-preview") || "";
-          break;
+        if (titleNodes.length === 0) {
+          Widget.dom.remove(cardDocId);
+          continue;
         }
-      }
-      var durationNode = Widget.dom.select(card, ".absolute-bottom-right .label")[0];
-      var duration = durationNode ? Widget.dom.text(durationNode).trim() : "";
 
-      items.push({
-        id: url,
-        title: title,
-        posterUrl: poster,
-        backdropUrl: poster,
-        previewUrl: preview,
-        link: url,
-        mediaType: "movie",
-        description: duration,
-      });
+        var titleNode = titleNodes[0];
+        var url       = Widget.dom.attr(titleNode, "href") || "";
+
+        if (!url || url.indexOf("jable.tv") === -1) {
+          Widget.dom.remove(cardDocId);
+          continue;
+        }
+
+        var title   = Widget.dom.text(titleNode) || "";
+        var poster  = "";
+        var preview = "";
+        for (var j = 0; j < imgNodes.length; j++) {
+          var src = Widget.dom.attr(imgNodes[j], "data-src") || "";
+          if (src) {
+            poster  = src;
+            preview = Widget.dom.attr(imgNodes[j], "data-preview") || "";
+            break;
+          }
+        }
+        var duration = durationNodes.length > 0 ? Widget.dom.text(durationNodes[0]).trim() : "";
+
+        items.push({
+          id:          url,
+          title:       title,
+          posterUrl:   poster,
+          backdropUrl: poster,
+          previewUrl:  preview,
+          link:        url,
+          mediaType:   "movie",
+          description: duration,
+        });
+      } finally {
+        Widget.dom.remove(cardDocId);
+      }
     }
-  } catch (err) {
-    console.error("parseHtml error:", err.message);
   } finally {
-    if (docId) Widget.dom.remove(docId);
+    Widget.dom.remove(docId);
   }
 
   return items;
 }
 
-// ========== 数据源函数 ==========
+// ── 网络请求 ─────────────────────────────────────────────────
+
+async function fetchHtml(url) {
+  var response = await Widget.http.get(url, {
+    headers: {
+      "User-Agent": UA,
+      "Referer":    "https://jable.tv/",
+      "Accept":     "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    },
+  });
+
+  if (!response || !response.ok) {
+    throw new Error("HTTP " + (response ? response.status : "?") + " - " + url);
+  }
+  if (typeof response.data !== "string" || response.data.length === 0) {
+    throw new Error("无法获取有效的 HTML 内容: " + url);
+  }
+  return response.data;
+}
+
+// ── 数据源函数 ───────────────────────────────────────────────
+
 async function search(params) {
   params = params || {};
-  var keyword = (params.keyword || "").trim();
-  if (keyword === "") {
-    throw new Error("关键词不能为空");
-  }
+  var keyword = encodeURIComponent(params.keyword || "");
+  var url = "https://jable.tv/search/" + keyword +
+    "/?mode=async&function=get_block&block_id=list_videos_videos_list_search_result&q=" + keyword;
 
-  var baseUrl = "https://jable.tv/search/" + encodeURIComponent(keyword) + "/";
-  var queryParams = {
-    mode: "async",
-    function: "get_block",
-    block_id: "list_videos_videos_list_search_result",
-    q: keyword,
-  };
-  if (params.sort_by) queryParams.sort_by = params.sort_by;
-  if (params.from) queryParams.from = params.from;
+  if (params.sort_by) { url += "&sort_by=" + params.sort_by; }
+  if (params.from)    { url += "&from="    + params.from;    }
 
-  var url = appendParams(baseUrl, queryParams);
   return loadPage({ url: url });
 }
 
 async function loadPage(params) {
   params = params || {};
-  var url = params.url;
-  if (!url) throw new Error("地址不能为空");
-
-  var queryParams = {};
-  if (params.sort_by) queryParams.sort_by = params.sort_by;
-  if (params.from) queryParams.from = params.from;
-
-  var fullUrl = url.indexOf('?') !== -1
-    ? appendParams(url, queryParams)
-    : url + '?' + new URLSearchParams(queryParams).toString();
-
   try {
-    var html = await fetchHtml(fullUrl);
+    var url = params.url;
+    if (!url) { throw new Error("地址不能为空"); }
+
+    if (params.sort_by) { url += "&sort_by=" + params.sort_by; }
+    if (params.from)    { url += "&from="    + params.from;    }
+
+    var html = await fetchHtml(url);
     var items = parseHtml(html);
-    console.log("loadPage: " + items.length + " items from " + fullUrl);
+    console.log("loadPage: " + items.length + " items from " + url);
     return items;
   } catch (err) {
     console.error("loadPage error:", err.message);
@@ -776,59 +744,38 @@ async function loadPage(params) {
   }
 }
 
-// ========== 详情页解析 ==========
+// ── loadDetail ───────────────────────────────────────────────
+
 async function loadDetail(link) {
   try {
     var html = await fetchHtml(link);
 
-    // 方式1：匹配 hlsUrl 变量
-    var hlsUrl = null;
-    var hlsMatch = html.match(/var\s+hlsUrl\s*=\s*['"]([^'"]+)['"]/);
-    if (hlsMatch && hlsMatch[1]) {
-      hlsUrl = hlsMatch[1];
-    } else {
-      // 方式2：匹配 video 标签中的 src
-      var videoSrcMatch = html.match(/<video[^>]*>\s*<source\s+src=['"]([^'"]+)['"]/i);
-      if (videoSrcMatch && videoSrcMatch[1]) {
-        hlsUrl = videoSrcMatch[1];
-      } else {
-        // 方式3：匹配 JSON 数据中的 hls_url
-        var jsonMatch = html.match(/player_data\s*=\s*({[^;]+});/);
-        if (jsonMatch) {
-          try {
-            var playerData = JSON.parse(jsonMatch[1]);
-            hlsUrl = playerData.hls_url || playerData.video_url;
-          } catch (e) {}
-        }
-      }
+    var match = html.match(/var hlsUrl\s*=\s*['"]([^'"]+)['"]/);
+    if (!match || !match[1]) {
+      throw new Error("未匹配到 hlsUrl，页面结构可能已变更");
     }
+    var hlsUrl = match[1];
 
-    if (!hlsUrl) {
-      throw new Error("未找到视频播放地址，页面结构可能已变更");
-    }
-
-    // 提取标题
     var titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-    var title = titleMatch ? titleMatch[1].trim() : "";
-    title = title.replace(/\s*[\|\u2502]\s*Jable\.tv.*$/i, "").trim();
+    var title = titleMatch ? titleMatch[1].replace(/\s*[\|｜]\s*Jable\.tv.*$/i, "").trim() : "";
 
-    console.log("loadDetail: hlsUrl found, title=" + title);
+    console.log("loadDetail: hlsUrl=" + (hlsUrl ? "found" : "missing") + " title=" + title);
 
     var headers = {
-      "Referer": link,
+      "Referer":    link,
       "User-Agent": UA,
     };
 
     return {
       title: title,
       // mpv 用
-      videoUrl: hlsUrl,
+      videoUrl:      hlsUrl,
       customHeaders: headers,
       // mdk / exo 用
       playUrls: [
         {
-          title: "HD",
-          url: hlsUrl,
+          title:   "HD",
+          url:     hlsUrl,
           headers: headers,
         },
       ],
