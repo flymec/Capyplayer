@@ -449,108 +449,38 @@ async function search(params) {
 
 async function loadDetail(link) {
   try {
-    link = normalizeUrl(link);
     var html = await fetchHtml(link);
 
-    var videoUrl = null;
-
-    // =========================
-    // ✅ 1. DPlayer解析
-    // =========================
-    var dpMatch = html.match(/video\s*:\s*\{[\s\S]*?url\s*:\s*['"]([^'"]+\.m3u8[^'"]*)['"]/);
-    if (dpMatch && dpMatch[1]) {
-      videoUrl = dpMatch[1];
-      console.log("命中 DPlayer");
+    var match = html.match(/var hlsUrl\s*=\s*['"]([^'"]+)['"]/);
+    if (!match || !match[1]) {
+      throw new Error("未匹配到 hlsUrl，页面结构可能已变更");
     }
+    var hlsUrl = match[1];
 
-    // =========================
-    // ✅ 2. 全局 m3u8 捕获
-    // =========================
-    if (!videoUrl) {
-      var m3u8Match = html.match(/https?:\/\/[^'"\s]+\.m3u8[^'"\s]*/);
-      if (m3u8Match) {
-        videoUrl = m3u8Match[0];
-        console.log("命中 全局m3u8");
-      }
-    }
-
-    // =========================
-    // ❌ 没拿到直接失败
-    // =========================
-    if (!videoUrl) {
-      throw new Error("未找到m3u8");
-    }
-
-    // =========================
-    // 🚀 线路池（核心）
-    // =========================
-    var hostList = [
-      "javday.app",
-      "javday.homes",
-      "javday.xyz",
-      "javday.club"
-    ];
-
-    async function testUrl(url) {
-      try {
-        var res = await Widget.http.get(url, {
-          headers: {
-            "Referer": link,
-            "Origin": BASE_URL,
-            "User-Agent": UA,
-          },
-        });
-        return res && res.ok;
-      } catch (e) {
-        return false;
-      }
-    }
-
-    async function getValidUrl(rawUrl) {
-      var urlObj = rawUrl.match(/https?:\/\/([^\/]+)(\/.*)/);
-      if (!urlObj) return rawUrl;
-
-      var path = urlObj[2];
-
-      for (var i = 0; i < hostList.length; i++) {
-        var test = "https://" + hostList[i] + path;
-        console.log("测试线路:", test);
-
-        var ok = await testUrl(test);
-        if (ok) {
-          console.log("命中线路:", test);
-          return test;
-        }
-      }
-
-      return rawUrl;
-    }
-
-    // =========================
-    // ✅ 自动选线路
-    // =========================
-    videoUrl = await getValidUrl(videoUrl);
-
-    // =========================
-    // ✅ 标题
-    // =========================
     var titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-    var title = titleMatch
-      ? titleMatch[1].replace(/\s*[-|｜].*$/, "").trim()
-      : "";
+    var title = titleMatch ? titleMatch[1].replace(/\s*[\|｜]\s*Jable\.tv.*$/i, "").trim() : "";
 
-    console.log("最终播放地址:", videoUrl);
+    console.log("loadDetail: hlsUrl=" + (hlsUrl ? "found" : "missing") + " title=" + title);
+
+    var headers = {
+      "Referer":    link,
+      "User-Agent": UA,
+    };
 
     return {
       title: title,
-      videoUrl: videoUrl,
-      customHeaders: {
-        "Referer": link,
-        "Origin": BASE_URL,
-        "User-Agent": UA,
-      },
+      // mpv 用
+      videoUrl:      hlsUrl,
+      customHeaders: headers,
+      // mdk / exo 用
+      playUrls: [
+        {
+          title:   "HD",
+          url:     hlsUrl,
+          headers: headers,
+        },
+      ],
     };
-
   } catch (err) {
     console.error("loadDetail error:", err.message);
     throw err;
