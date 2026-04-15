@@ -10,7 +10,7 @@
       "requiredVersion": "0.0.1",
       "version": "1.0.8",
       "author": "flyme",
-      "url": "https://raw.githubusercontent.com/flymec/Capyplayer/refs/heads/main/Widgets/capyplay.js"
+      "url": "https://raw.githubusercontent.com/flymec/Capyplayer/refs/heads/main/Widgets/capyplays.js"
     },
     {
       "id": "ti.bemarkt.javday",
@@ -19,7 +19,7 @@
       "requiredVersion": "0.0.1",
       "version": "1.5.0",
       "author": "flyme",
-      "url": ""
+      "url": "https://raw.githubusercontent.com/flymec/Capyplayer/refs/heads/main/Widgets/javdaydeek.js"
     },
         {
       "id": "javrate",
