@@ -499,6 +499,7 @@ return [];
   }
   
   // 提取标题，去掉末尾网站名后缀（保留番号中的连字符）
+  // 仅在成功提取时才返回 title，避免空字符串覆盖列表页已有的标题
   var titleMatch = html.match(/<title[^>]*>([\s\S]*?)</title>/i);
   var title = titleMatch
   ? titleMatch[1].replace(/\s*[|｜]\s*JAVDAY.*$/i, “”).trim()
@@ -506,14 +507,16 @@ return [];
   
   console.log(“loadDetail: videoUrl=” + videoUrl + “ cdnReferer=” + cdnReferer + “ title=” + title);
   
-  return {
-  title:     title,
-  videoUrl:  videoUrl,
+  var result = {
+  videoUrl: videoUrl,
   customHeaders: {
   “Referer”:    cdnReferer,
   “User-Agent”: UA,
   },
   };
+  // 只有成功提取到标题才附加，防止空字符串覆盖列表传入的标题
+  if (title) { result.title = title; }
+  return result;
   } catch (err) {
   console.error(“loadDetail error:”, err.message);
   throw err;
