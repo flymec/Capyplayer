@@ -1,8 +1,8 @@
-// == CapyPlayer 组件规范 v1.0（合并可播放版本逻辑）==============================
+// == CapyPlayer 组件规范（合并可播放版本 1.6.0）==============================
 var WidgetMetadata = {
   id: "ti.bemarkt.javday",
   title: "JAVDay",
-  description: "获取 JAVDay 推荐与视频",
+  description: "获取 JAVDay 推荐",
   author: "flyme",
   site: "https://javday.app",
   version: "1.6.0",
@@ -152,7 +152,7 @@ var WidgetMetadata = {
   ]
 };
 
-// == 常量与工具函数（保留可播放版本逻辑）========================================
+// == 原始工作逻辑（1.6.0 版）==================================================
 var BASE_URL = "https://javday.app";
 var UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36";
 
@@ -194,7 +194,6 @@ function buildPageUrl(baseUrl, sortBy, page) {
   return path;
 }
 
-// == 网络请求 ==================================================================
 async function fetchHtml(url) {
   var response = await Widget.http.get(url, {
     headers: {
@@ -211,7 +210,6 @@ async function fetchHtml(url) {
   return response.data;
 }
 
-// == HTML 解析（使用 Widget.dom，采用可播放版本的外层 HTML 子文档方式）========
 function extractBgImgUrl(style) {
   if (!style) return "";
   var match = style.match(/url\(\s*['"]?([^'")]+)['"]?\s*\)/);
@@ -229,14 +227,12 @@ function parseHtml(htmlContent) {
     for (var i = 0; i < cardNodes.length; i++) {
       var cardDocId = Widget.dom.parse(cardNodes[i].outerHtml);
       try {
-        // 链接（卡片根节点 <a>）
         var rootNodes = Widget.dom.select(cardDocId, "a.videoBox, .videoBox");
         var link = "";
         if (rootNodes.length > 0) {
           link = Widget.dom.attr(rootNodes[0], "href") || "";
         }
 
-        // 标题
         var titleNodes = Widget.dom.select(cardDocId, ".videoBox-info .title, .title");
         if (titleNodes.length === 0) {
           Widget.dom.remove(cardDocId);
@@ -248,13 +244,13 @@ function parseHtml(htmlContent) {
           continue;
         }
 
-        // 封面
         var coverNodes = Widget.dom.select(cardDocId, ".videoBox-cover");
         var poster = "";
         if (coverNodes.length > 0) {
           var style = Widget.dom.attr(coverNodes[0], "style") || "";
           poster = extractBgImgUrl(style);
         }
+
         if (!poster) {
           var imgNodes = Widget.dom.select(cardDocId, "img");
           for (var j = 0; j < imgNodes.length; j++) {
@@ -290,12 +286,11 @@ function parseHtml(htmlContent) {
   return items;
 }
 
-// == 核心功能函数 ==============================================================
 async function loadPage(params) {
   params = params || {};
   var baseUrl = params.url;
-  var sortBy  = params.sort_by || "new";
-  var page    = parseInt(params.page, 10) || 1;
+  var sortBy = params.sort_by || "new";
+  var page = parseInt(params.page, 10) || 1;
 
   if (!baseUrl) {
     console.error("loadPage: 缺少 url 参数");
@@ -337,7 +332,7 @@ async function loadPage(params) {
 async function search(params) {
   params = params || {};
   var keyword = params.keyword || "";
-  var page    = parseInt(params.page, 10) || 1;
+  var page = parseInt(params.page, 10) || 1;
 
   if (!keyword) {
     console.error("search: 请输入搜索关键词");
@@ -366,13 +361,13 @@ async function loadDetail(link) {
 
     var videoUrl = null;
 
-    // 1. DPlayer
+    // 1. DPlayer new DPlayer({ ... url: '...' ... })
     var dpMatch = html.match(/new\s+DPlayer\s*\([\s\S]*?url\s*:\s*['"]([^'"]+)['"]/);
     if (dpMatch && dpMatch[1]) {
       videoUrl = dpMatch[1];
     }
 
-    // 2. 裸 m3u8
+    // 2. 裸 m3u8 URL
     if (!videoUrl) {
       var m3u8Match = html.match(/['"](https?:\/\/[^'"]+\.m3u8[^'"]*)['"]/);
       if (m3u8Match && m3u8Match[1]) {
@@ -380,7 +375,7 @@ async function loadDetail(link) {
       }
     }
 
-    // 3. video/source 标签
+    // 3. <video src="..."> / <source src="...">
     if (!videoUrl) {
       var vsMatch = html.match(/<(?:video|source)[^>]+src\s*=\s*['"]([^'"]+)['"]/i);
       if (vsMatch && vsMatch[1]) {
@@ -392,13 +387,14 @@ async function loadDetail(link) {
       throw new Error("无法找到视频源");
     }
 
-    // 提取标题
+    // 提取标题（从 <title> 标签中去除站点后缀）
     var titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
     var title = titleMatch ? titleMatch[1].replace(/\s*[-|｜].*$/, "").trim() : "";
 
     console.log("loadDetail: videoUrl=" + (videoUrl ? "found" : "missing") + " title=" + title);
 
-    // 返回包含 customHeaders 的对象（实际 App 支持）
+    // 注意：虽然规范建议只返回 { title, videoUrl }，但可播放版本证明了 customHeaders 是有效的。
+    // 如果您的 CapyPlayer 版本支持 loadDetail 返回 customHeaders，请保留；若不支持，则移除此字段。
     return {
       title: title,
       videoUrl: videoUrl,
