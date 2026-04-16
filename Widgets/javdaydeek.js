@@ -1,11 +1,11 @@
-// == CapyPlayer 组件规范 v1.0（最小改动版）=====================================
+// == CapyPlayer 组件规范 v1.0（合并可播放版本逻辑）==============================
 var WidgetMetadata = {
   id: "ti.bemarkt.javday",
   title: "JAVDay",
   description: "获取 JAVDay 推荐与视频",
   author: "flyme",
   site: "https://javday.app",
-  version: "1.5.0",
+  version: "1.6.0",
   modules: [
     {
       id: "search",
@@ -152,164 +152,19 @@ var WidgetMetadata = {
   ]
 };
 
-// == 原始工作逻辑（仅做了 API 兼容性替换）======================================
-var CONFIG = {
-  BASE_URL: "https://javday.app",
-  USER_AGENT: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36",
-  LOG_PREFIX: "CapyPlayer: JAVDay -",
-  TIMEOUT: 10000
-};
-
-// 保留原 httpGet 逻辑
-async function httpGet(url, referer) {
-  referer = referer || CONFIG.BASE_URL;
-  try {
-    var resp = await Widget.http.get(url, {
-      headers: {
-        "User-Agent": CONFIG.USER_AGENT,
-        Referer: referer
-      },
-      timeout: CONFIG.TIMEOUT
-    });
-    if (!resp.ok) throw new Error("HTTP " + resp.status + " - " + url);
-    return resp.data;
-  } catch (error) {
-    console.error(CONFIG.LOG_PREFIX + " 请求失败: " + url, error.message);
-    throw error;
-  }
-}
+// == 常量与工具函数（保留可播放版本逻辑）========================================
+var BASE_URL = "https://javday.app";
+var UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36";
 
 function normalizeUrl(url) {
   if (!url) return "";
   if (url.indexOf("http://") === 0 || url.indexOf("https://") === 0) return url;
   if (url.indexOf("//") === 0) return "https:" + url;
-  var base = CONFIG.BASE_URL.replace(/\/+$/, "");
-  var path = url.charAt(0) === "/" ? url : "/" + url;
+  var base = BASE_URL.replace(/\/+$/, "");
+  var path = url.indexOf("/") === 0 ? url : "/" + url;
   return (base + path).replace(/([^:]\/)\/+/g, "$1");
 }
 
-// 恢复原 getCoverImgSrc 逻辑（直接使用 Widget.dom.attr 获取 style）
-function getCoverImgSrc(node) {
-  var styleAttr = Widget.dom.attr(node, "style") || "";
-  var match = styleAttr.match(/url\(\s*['"]?([^'")]+)['"]?\s*\)/);
-  if (match && match[1]) return normalizeUrl(match[1]);
-  return "";
-}
-
-// 恢复原 parseVideoList 逻辑（使用 Widget.html.load 或 Widget.dom.parse 加载整个文档）
-// 注意：原代码使用的是 Widget.html.load，规范中为 Widget.dom.parse，功能一致
-function parseVideoList(html, context) {
-  context = context || "来自 JAVDay";
-  var docId = Widget.dom.parse(html);
-  var items = [];
-  
-  // 原逻辑：使用全局选择器
-  var videoBoxes = Widget.dom.select(docId, ".video-wrapper .videoBox");
-  for (var i = 0; i < videoBoxes.length; i++) {
-    var box = videoBoxes[i];
-    var link = Widget.dom.attr(box, "href");
-    if (!link) continue;
-    
-    // 原逻辑：在 box 内部查找 .videoBox-info .title
-    // 注意：此处需要用 box 的 innerHTML 创建子文档进行选择，但原代码是直接用 $item.find，在 Widget.dom API 中没有直接等价方法。
-    // 原可工作版本使用的是 Widget.html.load 和类似 cheerio 的 API？不对，原代码注释中有 Cheerio，说明实际运行环境支持类似 jQuery 的选择器。
-    // 为了最小化改动，我们保留原 getCoverImgSrc 函数，并采用原注释中的解析方式：
-    // 原代码中使用了 $item.find(".videoBox-cover").attr("style")，这里我们通过 box 的 outerHTML 创建子文档来模拟。
-    
-    // 最小化改动：使用 box.html 属性获取内部 HTML 并解析（已验证原版可工作，此处保留）
-    var boxHtml = box.html || "";
-    var subDocId = Widget.dom.parse("<div>" + boxHtml + "</div>");
-    
-    var titleNodes = Widget.dom.select(subDocId, ".videoBox-info .title");
-    var title = titleNodes.length > 0 ? Widget.dom.text(titleNodes[0]).trim() : "";
-    
-    var coverNodes = Widget.dom.select(subDocId, ".videoBox-cover");
-    var imgSrc = "";
-    if (coverNodes.length > 0) {
-      imgSrc = getCoverImgSrc(coverNodes[0]);
-    }
-    
-    Widget.dom.remove(subDocId);
-    
-    if (!title) continue;
-    
-    var id = i + "|" + link;
-    var normalizedLink = normalizeUrl(link);
-    
-    items.push({
-      id: String(id),
-      title: title,
-      posterUrl: imgSrc,
-      backdropUrl: imgSrc,
-      description: context,
-      mediaType: "movie",
-      link: normalizedLink
-    });
-  }
-  
-  Widget.dom.remove(docId);
-  return items;
-}
-
-// 恢复原 extractVideoUrlFromDPlayerScript 逻辑（不变）
-function extractVideoUrlFromDPlayerScript(scriptContent) {
-  if (!scriptContent) return null;
-  var regexes = [
-    /video\s*:\s*{\s*[^}]*url\s*:\s*['"]([^'"]+)['"]/,
-    /url\s*:\s*['"]([^'"]+\.m3u8[^'"]*)['"]/
-  ];
-  for (var i = 0; i < regexes.length; i++) {
-    var match = scriptContent.match(regexes[i]);
-    if (match && match[1]) return match[1];
-  }
-  return null;
-}
-
-// 恢复原 extractVideoUrl 逻辑（使用 Widget.dom.select 在整个文档中查找）
-function extractVideoUrl(docId) {
-  // 1. 查找包含 new DPlayer 的脚本
-  var scripts = Widget.dom.select(docId, "script");
-  for (var i = 0; i < scripts.length; i++) {
-    var scriptContent = Widget.dom.text(scripts[i]) || "";
-    if (scriptContent.indexOf("new DPlayer") !== -1) {
-      var url = extractVideoUrlFromDPlayerScript(scriptContent);
-      if (url) return url;
-    }
-  }
-  
-  // 2. video 标签
-  var videoNodes = Widget.dom.select(docId, "video#J_prismPlayer");
-  if (videoNodes.length > 0) {
-    var src = Widget.dom.attr(videoNodes[0], "src");
-    if (src) return src;
-  }
-  
-  var sourceNodes = Widget.dom.select(docId, "source[src*='.m3u8']");
-  if (sourceNodes.length > 0) {
-    var src = Widget.dom.attr(sourceNodes[0], "src");
-    if (src) return src;
-  }
-  
-  // 3. 脚本中的 m3u8 地址
-  for (var j = 0; j < scripts.length; j++) {
-    var content = Widget.dom.text(scripts[j]) || "";
-    if (content.indexOf(".m3u8") !== -1) {
-      var match = content.match(/['"](https?:\/\/[^'"]+\.m3u8[^'"]*)['"]/);
-      if (match && match[1]) return match[1];
-    }
-  }
-  
-  // 4. iframe 嵌入
-  var iframeNodes = Widget.dom.select(docId, "iframe[src*='player']");
-  if (iframeNodes.length > 0) {
-    var src = Widget.dom.attr(iframeNodes[0], "src");
-    if (src) return normalizeUrl(src);
-  }
-  
-  return null;
-}
-
-// 恢复原 buildPageUrl 逻辑（不变）
 function extractCategoryId(url) {
   var parts = url.split("/").filter(function(p) { return p && p !== "index.php"; });
   return parts.pop() || "unknown";
@@ -319,115 +174,241 @@ function buildPageUrl(baseUrl, sortBy, page) {
   var cleanBase = baseUrl.replace(/\/+$/, "").replace(/\/page\/\d+$/, "");
   var id = extractCategoryId(cleanBase);
   var isLabel = cleanBase.indexOf("/label/") !== -1;
-  
+  var hasIndexPhp = cleanBase.indexOf("index.php") !== -1;
+
   var path;
   if (sortBy === "popular") {
     path = "/fiter/by/hits/id/" + id + "/";
   } else {
-    path = isLabel ? "/label/" + id + "/" : "/category/" + id + "/";
+    path = isLabel ? ("/label/" + id + "/") : ("/category/" + id + "/");
   }
-  
-  if (cleanBase.indexOf("index.php") !== -1) {
+
+  if (hasIndexPhp) {
     path = "/index.php" + path;
   }
-  
+
   if (page > 1) {
     path += "page/" + page + "/";
   }
-  
+
   return path;
 }
 
-function getFullUrl(path) {
-  if (path.indexOf("http") === 0) return path;
-  return CONFIG.BASE_URL + (path.charAt(0) === "/" ? path : "/" + path);
+// == 网络请求 ==================================================================
+async function fetchHtml(url) {
+  var response = await Widget.http.get(url, {
+    headers: {
+      "User-Agent": UA,
+      "Referer": BASE_URL
+    }
+  });
+  if (!response || !response.ok) {
+    throw new Error("HTTP " + (response ? response.status : "?") + " - " + url);
+  }
+  if (typeof response.data !== "string" || response.data.length === 0) {
+    throw new Error("响应内容为空: " + url);
+  }
+  return response.data;
 }
 
-// == 核心功能函数（仅修正参数名和返回值结构）===================================
+// == HTML 解析（使用 Widget.dom，采用可播放版本的外层 HTML 子文档方式）========
+function extractBgImgUrl(style) {
+  if (!style) return "";
+  var match = style.match(/url\(\s*['"]?([^'")]+)['"]?\s*\)/);
+  return (match && match[1]) ? normalizeUrl(match[1]) : "";
+}
+
+function parseHtml(htmlContent) {
+  var items = [];
+  var docId = Widget.dom.parse(htmlContent);
+
+  try {
+    var cardNodes = Widget.dom.select(docId, ".videoBox");
+    console.log("parseHtml: found " + cardNodes.length + " cards");
+
+    for (var i = 0; i < cardNodes.length; i++) {
+      var cardDocId = Widget.dom.parse(cardNodes[i].outerHtml);
+      try {
+        // 链接（卡片根节点 <a>）
+        var rootNodes = Widget.dom.select(cardDocId, "a.videoBox, .videoBox");
+        var link = "";
+        if (rootNodes.length > 0) {
+          link = Widget.dom.attr(rootNodes[0], "href") || "";
+        }
+
+        // 标题
+        var titleNodes = Widget.dom.select(cardDocId, ".videoBox-info .title, .title");
+        if (titleNodes.length === 0) {
+          Widget.dom.remove(cardDocId);
+          continue;
+        }
+        var title = Widget.dom.text(titleNodes[0]).trim();
+        if (!title) {
+          Widget.dom.remove(cardDocId);
+          continue;
+        }
+
+        // 封面
+        var coverNodes = Widget.dom.select(cardDocId, ".videoBox-cover");
+        var poster = "";
+        if (coverNodes.length > 0) {
+          var style = Widget.dom.attr(coverNodes[0], "style") || "";
+          poster = extractBgImgUrl(style);
+        }
+        if (!poster) {
+          var imgNodes = Widget.dom.select(cardDocId, "img");
+          for (var j = 0; j < imgNodes.length; j++) {
+            var src = Widget.dom.attr(imgNodes[j], "data-src") ||
+                      Widget.dom.attr(imgNodes[j], "src") || "";
+            if (src) { poster = normalizeUrl(src); break; }
+          }
+        }
+
+        link = normalizeUrl(link);
+        if (!link) {
+          Widget.dom.remove(cardDocId);
+          continue;
+        }
+
+        items.push({
+          id: link,
+          title: title,
+          posterUrl: poster,
+          backdropUrl: poster,
+          link: link,
+          mediaType: "movie"
+        });
+      } finally {
+        Widget.dom.remove(cardDocId);
+      }
+    }
+  } finally {
+    Widget.dom.remove(docId);
+  }
+
+  console.log("parseHtml: returning " + items.length + " items");
+  return items;
+}
+
+// == 核心功能函数 ==============================================================
 async function loadPage(params) {
   params = params || {};
-  var url = params.url;
-  var sortBy = params.sort_by || "new";
-  var page = params.page || 1;
-  
-  if (!url) {
-    console.error(CONFIG.LOG_PREFIX + " 缺少 URL 参数");
+  var baseUrl = params.url;
+  var sortBy  = params.sort_by || "new";
+  var page    = parseInt(params.page, 10) || 1;
+
+  if (!baseUrl) {
+    console.error("loadPage: 缺少 url 参数");
     return [];
   }
-  
-  var targetPath = buildPageUrl(url, sortBy, page);
-  var targetUrl = getFullUrl(targetPath);
-  
+
+  var path = buildPageUrl(baseUrl, sortBy, page);
+  var targetUrl = normalizeUrl(path);
+
   try {
-    var html = await httpGet(targetUrl, url);
-    var items = parseVideoList(html, "排序:" + (sortBy === "new" ? "最新" : "人气"));
-    
+    var html = await fetchHtml(targetUrl);
+    var items = parseHtml(html);
+
     if (items.length === 0 && sortBy === "popular") {
-      console.warn(CONFIG.LOG_PREFIX + " 人气路径无数据，降级到普通路径");
-      var fallbackPath = buildPageUrl(url, "new", page);
-      var fallbackHtml = await httpGet(getFullUrl(fallbackPath), url);
-      items = parseVideoList(fallbackHtml, "排序:最新(人气降级)");
+      console.warn("loadPage: 人气路径无数据，降级到普通路径");
+      var fallbackPath = buildPageUrl(baseUrl, "new", page);
+      var fallbackHtml = await fetchHtml(normalizeUrl(fallbackPath));
+      return parseHtml(fallbackHtml);
     }
-    
+
     return items;
-  } catch (error) {
+  } catch (err) {
     if (sortBy === "popular") {
-      console.warn(CONFIG.LOG_PREFIX + " 人气路径请求失败，尝试降级", error.message);
-      var fallbackPath = buildPageUrl(url, "new", page);
-      var fallbackHtml = await httpGet(getFullUrl(fallbackPath), url);
-      return parseVideoList(fallbackHtml, "排序:最新(人气降级)");
+      console.warn("loadPage: 人气路径失败，降级: " + err.message);
+      try {
+        var fbPath = buildPageUrl(baseUrl, "new", page);
+        var fbHtml = await fetchHtml(normalizeUrl(fbPath));
+        return parseHtml(fbHtml);
+      } catch (fbErr) {
+        console.error("loadPage: 降级也失败: " + fbErr.message);
+        return [];
+      }
     }
-    console.error(CONFIG.LOG_PREFIX + " loadPage 失败", error);
+    console.error("loadPage error: " + err.message);
     return [];
   }
 }
 
 async function search(params) {
   params = params || {};
-  var keyword = params.keyword;
-  var page = params.page || 1;
-  
+  var keyword = params.keyword || "";
+  var page    = parseInt(params.page, 10) || 1;
+
   if (!keyword) {
-    console.error(CONFIG.LOG_PREFIX + " 缺少关键词");
+    console.error("search: 请输入搜索关键词");
     return [];
   }
-  
-  var encodedKeyword = encodeURIComponent(keyword);
-  var searchUrl = CONFIG.BASE_URL + "/search/wd/" + encodedKeyword + "/";
-  if (page > 1) searchUrl += "page/" + page + "/";
-  
+
+  var encoded = encodeURIComponent(keyword);
+  var url = BASE_URL + "/search/wd/" + encoded + "/";
+  if (page > 1) {
+    url += "page/" + page + "/";
+  }
+
   try {
-    var html = await httpGet(searchUrl);
-    return parseVideoList(html, "搜索: " + keyword);
-  } catch (error) {
-    console.error(CONFIG.LOG_PREFIX + " search 失败", error);
+    var html = await fetchHtml(url);
+    return parseHtml(html);
+  } catch (err) {
+    console.error("search error: " + err.message);
     return [];
   }
 }
 
 async function loadDetail(link) {
-  if (!link) throw new Error("缺少详情链接");
-  
-  var fullLink = normalizeUrl(link);
-  var html = await httpGet(fullLink, fullLink);
-  var docId = Widget.dom.parse(html);
-  
-  var videoUrl = extractVideoUrl(docId);
-  // 提取标题（可选）
-  var titleNodes = Widget.dom.select(docId, "h1, .title, .video-title");
-  var title = "";
-  for (var i = 0; i < titleNodes.length; i++) {
-    title = Widget.dom.text(titleNodes[i]).trim();
-    if (title) break;
+  try {
+    link = normalizeUrl(link);
+    var html = await fetchHtml(link);
+
+    var videoUrl = null;
+
+    // 1. DPlayer
+    var dpMatch = html.match(/new\s+DPlayer\s*\([\s\S]*?url\s*:\s*['"]([^'"]+)['"]/);
+    if (dpMatch && dpMatch[1]) {
+      videoUrl = dpMatch[1];
+    }
+
+    // 2. 裸 m3u8
+    if (!videoUrl) {
+      var m3u8Match = html.match(/['"](https?:\/\/[^'"]+\.m3u8[^'"]*)['"]/);
+      if (m3u8Match && m3u8Match[1]) {
+        videoUrl = m3u8Match[1];
+      }
+    }
+
+    // 3. video/source 标签
+    if (!videoUrl) {
+      var vsMatch = html.match(/<(?:video|source)[^>]+src\s*=\s*['"]([^'"]+)['"]/i);
+      if (vsMatch && vsMatch[1]) {
+        videoUrl = vsMatch[1];
+      }
+    }
+
+    if (!videoUrl) {
+      throw new Error("无法找到视频源");
+    }
+
+    // 提取标题
+    var titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    var title = titleMatch ? titleMatch[1].replace(/\s*[-|｜].*$/, "").trim() : "";
+
+    console.log("loadDetail: videoUrl=" + (videoUrl ? "found" : "missing") + " title=" + title);
+
+    // 返回包含 customHeaders 的对象（实际 App 支持）
+    return {
+      title: title,
+      videoUrl: videoUrl,
+      customHeaders: {
+        "Referer": link,
+        "User-Agent": UA
+      }
+    };
+  } catch (err) {
+    console.error("loadDetail error: " + err.message);
+    throw err;
   }
-  
-  Widget.dom.remove(docId);
-  
-  if (!videoUrl) throw new Error("无法找到视频源");
-  
-  // 规范要求返回 { title, videoUrl }
-  return {
-    title: title || "",
-    videoUrl: videoUrl
-  };
 }
