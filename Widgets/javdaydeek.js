@@ -1,11 +1,11 @@
-// == CapyPlayer 组件规范（合并可播放版本 1.6.0）==============================
+// == CapyPlayer 组件规范（合并可播放版本 + 标题保护）=======================
 var WidgetMetadata = {
   id: "ti.bemarkt.javday",
   title: "JAVDay",
   description: "获取 JAVDay 推荐",
   author: "flyme",
   site: "https://javday.app",
-  version: "1.6.0",
+  version: "1.6.1",
   modules: [
     {
       id: "search",
@@ -152,7 +152,7 @@ var WidgetMetadata = {
   ]
 };
 
-// == 原始工作逻辑（1.6.0 版）==================================================
+// == 核心逻辑（1.6.0 原版 + 标题保护）=======================================
 var BASE_URL = "https://javday.app";
 var UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36";
 
@@ -361,13 +361,13 @@ async function loadDetail(link) {
 
     var videoUrl = null;
 
-    // 1. DPlayer new DPlayer({ ... url: '...' ... })
+    // 1. DPlayer
     var dpMatch = html.match(/new\s+DPlayer\s*\([\s\S]*?url\s*:\s*['"]([^'"]+)['"]/);
     if (dpMatch && dpMatch[1]) {
       videoUrl = dpMatch[1];
     }
 
-    // 2. 裸 m3u8 URL
+    // 2. 裸 m3u8
     if (!videoUrl) {
       var m3u8Match = html.match(/['"](https?:\/\/[^'"]+\.m3u8[^'"]*)['"]/);
       if (m3u8Match && m3u8Match[1]) {
@@ -375,7 +375,7 @@ async function loadDetail(link) {
       }
     }
 
-    // 3. <video src="..."> / <source src="...">
+    // 3. video/src 标签
     if (!videoUrl) {
       var vsMatch = html.match(/<(?:video|source)[^>]+src\s*=\s*['"]([^'"]+)['"]/i);
       if (vsMatch && vsMatch[1]) {
@@ -387,14 +387,38 @@ async function loadDetail(link) {
       throw new Error("无法找到视频源");
     }
 
-    // 提取标题（从 <title> 标签中去除站点后缀）
+    // ---------- 标题提取（多级保护，绝不返回空字符串）----------
+    var title = "";
+
+    // 方法1：从 <title> 标签提取并清理
     var titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-    var title = titleMatch ? titleMatch[1].replace(/\s*[-|｜].*$/, "").trim() : "";
+    if (titleMatch && titleMatch[1]) {
+      title = titleMatch[1].replace(/\s*[-|｜].*$/, "").trim();
+    }
+
+    // 方法2：若方法1失败，从常见标题容器中提取
+    if (!title) {
+      var docId = Widget.dom.parse(html);
+      var titleNodes = Widget.dom.select(docId, "h1, .video-title, .entry-title, .post-title");
+      for (var i = 0; i < titleNodes.length; i++) {
+        var text = Widget.dom.text(titleNodes[i]).trim();
+        if (text) {
+          title = text;
+          break;
+        }
+      }
+      Widget.dom.remove(docId);
+    }
+
+    // 方法3：若仍然为空，从链接中生成一个后备标题（避免空字符串覆盖原显示）
+    if (!title) {
+      var parts = link.split("/").filter(function(s) { return s.length > 0; });
+      var lastPart = parts[parts.length - 1] || "";
+      title = lastPart.replace(/\.html?$/, "").replace(/-/g, " ").trim() || "JAVDay Video";
+    }
 
     console.log("loadDetail: videoUrl=" + (videoUrl ? "found" : "missing") + " title=" + title);
 
-    // 注意：虽然规范建议只返回 { title, videoUrl }，但可播放版本证明了 customHeaders 是有效的。
-    // 如果您的 CapyPlayer 版本支持 loadDetail 返回 customHeaders，请保留；若不支持，则移除此字段。
     return {
       title: title,
       videoUrl: videoUrl,
