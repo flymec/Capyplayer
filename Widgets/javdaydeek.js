@@ -1,11 +1,11 @@
-// == CapyPlayer 组件规范（合并可播放版本 + 标题保护）=======================
+// == CapyPlayer 组件规范（DOM提取视频 + 标题保护）============================
 var WidgetMetadata = {
   id: "ti.bemarkt.javday",
   title: "JAVDay",
   description: "获取 JAVDay 推荐",
   author: "flyme",
   site: "https://javday.app",
-  version: "1.6.1",
+  version: "1.7.0",
   modules: [
     {
       id: "search",
@@ -152,7 +152,7 @@ var WidgetMetadata = {
   ]
 };
 
-// == 核心逻辑（1.6.0 原版 + 标题保护）=======================================
+// == 核心逻辑（DOM 提取 + 标题保护）==========================================
 var BASE_URL = "https://javday.app";
 var UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36";
 
@@ -354,70 +354,88 @@ async function search(params) {
   }
 }
 
+// ---------- 基于 DOM 提取视频地址（不再使用正则）----------
+function extractVideoUrlFromDoc(docId) {
+  // 1. 查找所有 script 标签，寻找 new DPlayer 初始化代码
+  var scripts = Widget.dom.select(docId, "script");
+  for (var i = 0; i < scripts.length; i++) {
+    var scriptContent = Widget.dom.text(scripts[i]) || "";
+    if (scriptContent.indexOf("new DPlayer") !== -1) {
+      // 在脚本内容中用正则提取 url 参数（仅作为辅助，不依赖全局正则）
+      var urlMatch = scriptContent.match(/url\s*:\s*['"]([^'"]+)['"]/);
+      if (urlMatch && urlMatch[1]) {
+        return urlMatch[1];
+      }
+    }
+  }
+
+  // 2. 查找 video 标签的 src 属性
+  var videoNodes = Widget.dom.select(docId, "video");
+  for (var j = 0; j < videoNodes.length; j++) {
+    var src = Widget.dom.attr(videoNodes[j], "src");
+    if (src) return src;
+  }
+
+  // 3. 查找 source 标签的 src 属性
+  var sourceNodes = Widget.dom.select(docId, "source");
+  for (var k = 0; k < sourceNodes.length; k++) {
+    var src = Widget.dom.attr(sourceNodes[k], "src");
+    if (src) return src;
+  }
+
+  // 4. 查找 iframe 嵌入（可能包含播放器）
+  var iframeNodes = Widget.dom.select(docId, "iframe");
+  for (var m = 0; m < iframeNodes.length; m++) {
+    var src = Widget.dom.attr(iframeNodes[m], "src");
+    if (src && (src.indexOf("player") !== -1 || src.indexOf("m3u8") !== -1)) {
+      return normalizeUrl(src);
+    }
+  }
+
+  return null;
+}
+
+// ---------- 基于 DOM 提取标题（多级保护）----------
+function extractTitleFromDoc(docId, fallbackUrl) {
+  // 1. 从常见标题选择器提取
+  var selectors = ["h1", ".video-title", ".entry-title", ".post-title", "title"];
+  for (var i = 0; i < selectors.length; i++) {
+    var nodes = Widget.dom.select(docId, selectors[i]);
+    if (nodes.length > 0) {
+      var text = Widget.dom.text(nodes[0]).trim();
+      if (text) {
+        // 如果是从 <title> 提取，移除站点后缀
+        if (selectors[i] === "title") {
+          text = text.replace(/\s*[-|｜].*$/, "").trim();
+        }
+        return text;
+      }
+    }
+  }
+
+  // 2. 后备：从 URL 生成标题
+  var parts = fallbackUrl.split("/").filter(function(s) { return s.length > 0; });
+  var lastPart = parts[parts.length - 1] || "";
+  var fallbackTitle = lastPart.replace(/\.html?$/, "").replace(/-/g, " ").trim();
+  return fallbackTitle || "JAVDay Video";
+}
+
 async function loadDetail(link) {
   try {
     link = normalizeUrl(link);
     var html = await fetchHtml(link);
+    var docId = Widget.dom.parse(html);
 
-    var videoUrl = null;
+    var videoUrl = extractVideoUrlFromDoc(docId);
+    var title = extractTitleFromDoc(docId, link);
 
-    // 1. DPlayer
-    var dpMatch = html.match(/new\s+DPlayer\s*\([\s\S]*?url\s*:\s*['"]([^'"]+)['"]/);
-    if (dpMatch && dpMatch[1]) {
-      videoUrl = dpMatch[1];
-    }
-
-    // 2. 裸 m3u8
-    if (!videoUrl) {
-      var m3u8Match = html.match(/['"](https?:\/\/[^'"]+\.m3u8[^'"]*)['"]/);
-      if (m3u8Match && m3u8Match[1]) {
-        videoUrl = m3u8Match[1];
-      }
-    }
-
-    // 3. video/src 标签
-    if (!videoUrl) {
-      var vsMatch = html.match(/<(?:video|source)[^>]+src\s*=\s*['"]([^'"]+)['"]/i);
-      if (vsMatch && vsMatch[1]) {
-        videoUrl = vsMatch[1];
-      }
-    }
+    Widget.dom.remove(docId);
 
     if (!videoUrl) {
       throw new Error("无法找到视频源");
     }
 
-    // ---------- 标题提取（多级保护，绝不返回空字符串）----------
-    var title = "";
-
-    // 方法1：从 <title> 标签提取并清理
-    var titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-    if (titleMatch && titleMatch[1]) {
-      title = titleMatch[1].replace(/\s*[-|｜].*$/, "").trim();
-    }
-
-    // 方法2：若方法1失败，从常见标题容器中提取
-    if (!title) {
-      var docId = Widget.dom.parse(html);
-      var titleNodes = Widget.dom.select(docId, "h1, .video-title, .entry-title, .post-title");
-      for (var i = 0; i < titleNodes.length; i++) {
-        var text = Widget.dom.text(titleNodes[i]).trim();
-        if (text) {
-          title = text;
-          break;
-        }
-      }
-      Widget.dom.remove(docId);
-    }
-
-    // 方法3：若仍然为空，从链接中生成一个后备标题（避免空字符串覆盖原显示）
-    if (!title) {
-      var parts = link.split("/").filter(function(s) { return s.length > 0; });
-      var lastPart = parts[parts.length - 1] || "";
-      title = lastPart.replace(/\.html?$/, "").replace(/-/g, " ").trim() || "JAVDay Video";
-    }
-
-    console.log("loadDetail: videoUrl=" + (videoUrl ? "found" : "missing") + " title=" + title);
+    console.log("loadDetail: videoUrl=" + videoUrl + " title=" + title);
 
     return {
       title: title,
