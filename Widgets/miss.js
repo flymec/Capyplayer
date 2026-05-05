@@ -120,16 +120,16 @@ var WidgetMetadata = {
                     type: "enumeration",
                     description: "选择分类",
                     enumOptions: [
-                        { title: "无码流出", value: "https://missav.ai/dm621/cn/uncensored-leak" },
-                        { title: "FC2", value: "https://missav.ai/dm99/cn/fc2" },
-                        { title: "HEYZO", value: "https://missav.ai/dm319995/cn/heyzo" },
-                        { title: "东京热", value: "https://missav.ai/dm29/cn/tokyohot" },
-                        { title: "Caribbeancom", value: "https://missav.ai/dm1271239/cn/caribbeancom" },
-                        { title: "Gachinco", value: "https://missav.ai/dm135/cn/gachinco" },
-                        { title: "XXX-AV", value: "https://missav.ai/dm29/cn/xxxav" },
-                        { title: "人妻斩", value: "https://missav.ai/dm24/cn/marriedslash" },
-                        { title: "顽皮 4610", value: "https://missav.ai/dm19/cn/naughty4610" },
-                        { title: "顽皮 0930", value: "https://missav.ai/dm22/cn/naughty0930" }
+                        { title: "无码流出", value: "https://missav.ws/dm621/cn/uncensored-leak" },
+                        { title: "FC2", value: "https://missav.ws/dm99/cn/fc2" },
+                        { title: "HEYZO", value: "https://missav.ws/dm319995/cn/heyzo" },
+                        { title: "东京热", value: "https://missav.ws/dm29/cn/tokyohot" },
+                        { title: "Caribbeancom", value: "https://missav.ws/dm1271239/cn/caribbeancom" },
+                        { title: "Gachinco", value: "https://missav.ws/dm135/cn/gachinco" },
+                        { title: "XXX-AV", value: "https://missav.ws/dm29/cn/xxxav" },
+                        { title: "人妻斩", value: "https://missav.ws/dm24/cn/marriedslash" },
+                        { title: "顽皮 4610", value: "https://missav.ws/dm19/cn/naughty4610" },
+                        { title: "顽皮 0930", value: "https://missav.ws/dm22/cn/naughty0930" }
                     ]
                 },
                 {
@@ -164,9 +164,9 @@ var WidgetMetadata = {
                     type: "enumeration",
                     description: "选择分类",
                     enumOptions: [
-                        { title: "麻豆传媒", value: "https://missav.ai/dm34/cn/madou" },
-                        { title: "韩国直播", value: "https://missav.ai/cn/klive" },
-                        { title: "中国直播", value: "https://missav.ai/cn/clive" }
+                        { title: "麻豆传媒", value: "https://missav.ws/dm34/cn/madou" },
+                        { title: "韩国直播", value: "https://missav.ws/cn/klive" },
+                        { title: "中国直播", value: "https://missav.ws/cn/clive" }
                     ]
                 },
                 {
@@ -201,18 +201,18 @@ var WidgetMetadata = {
                     type: "enumeration",
                     description: "选择具体类型",
                     enumOptions: [
-                        { title: "高清 (248,852部)", value: "https://missav.ai/dm95/cn/genres/%E9%AB%98%E6%B8%85" },
-                        { title: "独家 (220,805部)", value: "https://missav.ai/dm136/cn/genres/%E7%8B%AC%E5%AE%B6" },
-                        { title: "单体作品 (185,259部)", value: "https://missav.ai/dm118/cn/genres/%E5%8D%95%E4%BD%93%E4%BD%9C%E5%93%81" },
-                        { title: "薄格 (93,610部)", value: "https://missav.ai/dm95/cn/genres/%E8%96%84%E6%A0%BC" },
-                        { title: "全高清 (FHD) (11928部)", value: "https://missav.ai/cn/genres/%E5%85%A8%E9%AB%98%E6%B8%85%20(FHD)" },
-                        { title: "低成本影片 (70部)", value: "https://missav.ai/cn/genres/%E4%BD%8E%E6%88%90%E6%9C%AC%E5%BD%B1%E7%89%87" },
-                        { title: "套装商品 (44部)", value: "https://missav.ai/cn/genres/%E5%A5%97%E8%A3%85%E5%95%86%E5%93%81" },
-                        { title: "限时特卖 (37部)", value: "https://missav.ai/cn/genres/%E9%99%90%E6%97%B6%E7%89%B9%E5%8D%96" },
-                        { title: "高清 (HD) (36部)", value: "https://missav.ai/cn/genres/%E9%AB%98%E6%B8%85%20%28HD%29" },
-                        { title: "协力作品 (32部)", value: "https://missav.ai/cn/genres/%E5%8D%8F%E5%8A%9B%E4%BD%9C%E5%93%81" },
-                        { title: "单一作品 (13部)", value: "https://missav.ai/cn/genres/%E5%8D%95%E4%B8%80%E4%BD%9C%E5%93%81" },
-                        { title: "仅限分发 (12部)", value: "https://missav.ai/cn/genres/%E4%BB%85%E9%99%90%E5%88%86%E5%8F%91" }
+                        { title: "高清 (248,852部)", value: "https://missav.ws/dm95/cn/genres/%E9%AB%98%E6%B8%85" },
+                        { title: "独家 (220,805部)", value: "https://missav.ws/dm136/cn/genres/%E7%8B%AC%E5%AE%B6" },
+                        { title: "单体作品 (185,259部)", value: "https://missav.ws/dm118/cn/genres/%E5%8D%95%E4%BD%93%E4%BD%9C%E5%93%81" },
+                        { title: "薄格 (93,610部)", value: "https://missav.ws/dm95/cn/genres/%E8%96%84%E6%A0%BC" },
+                        { title: "全高清 (FHD) (11928部)", value: "https://missav.ws/cn/genres/%E5%85%A8%E9%AB%98%E6%B8%85%20(FHD)" },
+                        { title: "低成本影片 (70部)", value: "https://missav.ws/cn/genres/%E4%BD%8E%E6%88%90%E6%9C%AC%E5%BD%B1%E7%89%87" },
+                        { title: "套装商品 (44部)", value: "https://missav.ws/cn/genres/%E5%A5%97%E8%A3%85%E5%95%86%E5%93%81" },
+                        { title: "限时特卖 (37部)", value: "https://missav.ws/cn/genres/%E9%99%90%E6%97%B6%E7%89%B9%E5%8D%96" },
+                        { title: "高清 (HD) (36部)", value: "https://missav.ws/cn/genres/%E9%AB%98%E6%B8%85%20%28HD%29" },
+                        { title: "协力作品 (32部)", value: "https://missav.ws/cn/genres/%E5%8D%8F%E5%8A%9B%E4%BD%9C%E5%93%81" },
+                        { title: "单一作品 (13部)", value: "https://missav.ws/cn/genres/%E5%8D%95%E4%B8%80%E4%BD%9C%E5%93%81" },
+                        { title: "仅限分发 (12部)", value: "https://missav.ws/cn/genres/%E4%BB%85%E9%99%90%E5%88%86%E5%8F%91" }
                     ]
                 },
                 {
