@@ -4,7 +4,7 @@ var WidgetMetadata = {
     description: "MissAV源码",
     author: "Butterflyz",
     site: "miss",
-    version: "1.0.2",
+    version: "1.0.4",
     requiredVersion: "0.0.2",
     detailCacheDuration: 300,
     modules: [
@@ -913,32 +913,42 @@ async function loadPage(params) {
 }
 
 async function fetchVideoList(url) {
-    try {
+    // 内部实际发起请求，403 会被 Dio 作为异常抛出
+    async function doRequest(retrying) {
         var headers = await buildHeaders(BASE_DOMAIN + "/cn/");
-        var response = await Widget.http.get(url, {
-            headers: headers,
-            allow_redirects: true
-        });
-
-        // 403 时强制刷新 Cookie 后重试一次
-        if (!response || !response.data || response.data.length < 10000
-            || (response.status && response.status === 403)) {
-            console.warn("fetchVideoList: bad response, refreshing cookie and retrying...");
-            _cookieCache = null;
-            _cookieFetchedAt = 0;
-            headers = await buildHeaders(BASE_DOMAIN + "/cn/");
-            response = await Widget.http.get(url, {
+        try {
+            var response = await Widget.http.get(url, {
                 headers: headers,
                 allow_redirects: true
             });
+            if (!response || !response.data || response.data.length < 10000) {
+                return null;
+            }
+            return response.data;
+        } catch (e) {
+            var msg = (e.message || e.toString() || "");
+            var is403 = msg.indexOf("403") !== -1;
+            // 首次 403：刷新 Cookie 后交由外层重试
+            if (is403 && !retrying) {
+                console.warn("fetchVideoList: 403 caught, will refresh cookie and retry");
+                _cookieCache = null;
+                _cookieFetchedAt = 0;
+                return "RETRY";
+            }
+            // 其他错误或已是重试：直接抛
+            throw e;
         }
+    }
 
-        if (!response || !response.data || response.data.length < 10000) {
+    try {
+        var html = await doRequest(false);
+        if (html === "RETRY") {
+            html = await doRequest(true);
+        }
+        if (!html) {
             return [createPlaceholderItem("网络请求失败或数据异常")];
         }
-
-        return parseVideoList(response.data);
-
+        return parseVideoList(html);
     } catch (error) {
         console.error("fetchVideoList error:", error.message || error);
         return [createPlaceholderItem("访问失败，可能已被风控")];
