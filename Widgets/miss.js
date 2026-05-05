@@ -690,22 +690,98 @@ var WidgetMetadata = {
 // ── 常量 ─────────────────────────────────────────────────────
 
 var UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15";
-var BASE_HEADERS = {
-    "User-Agent": UA,
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Cache-Control": "no-cache",
-    "Pragma": "no-cache",
-    "Sec-Fetch-Dest": "document",
-    "Sec-Fetch-Mode": "navigate",
-    "Sec-Fetch-Site": "none",
-    "Sec-Fetch-User": "?1",
-    "Upgrade-Insecure-Requests": "1",
-    "DNT": "1",
-    "Referer": "https://missav.ai/",
-    "Connection": "keep-alive"
-};
+var BASE_DOMAIN = "https://missav.ai";
+
+// 运行时 Cookie 缓存（进程内有效，跨调用复用）
+var _cookieCache = null;
+var _cookieFetchedAt = 0;
+var COOKIE_TTL_MS = 10 * 60 * 1000; // 10 分钟内复用同一份 Cookie
+
+/**
+ * 请求首页，从响应头 Set-Cookie 中提取 Cookie 字符串。
+ * 缓存 10 分钟，避免每次列表请求都额外发一次首页请求。
+ */
+async function fetchCookie() {
+    var now = Date.now();
+    if (_cookieCache && (now - _cookieFetchedAt) < COOKIE_TTL_MS) {
+        return _cookieCache;
+    }
+
+    try {
+        var resp = await Widget.http.get(BASE_DOMAIN + "/cn/", {
+            headers: {
+                "User-Agent": UA,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                "Accept-Encoding": "gzip, deflate, br",
+                "Upgrade-Insecure-Requests": "1",
+                "Sec-Fetch-Dest": "document",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Site": "none",
+                "Connection": "keep-alive"
+            },
+            allow_redirects: true
+        });
+
+        // Widget.http 可能将 Set-Cookie 汇总在 resp.headers 里
+        var cookieStr = "";
+        if (resp && resp.headers) {
+            var raw = resp.headers["set-cookie"] || resp.headers["Set-Cookie"] || "";
+            if (Array.isArray(raw)) {
+                // 多条 Set-Cookie → 取每条的 name=value 部分拼接
+                cookieStr = raw.map(function(c) {
+                    return c.split(";")[0].trim();
+                }).join("; ");
+            } else if (typeof raw === "string" && raw.length > 0) {
+                cookieStr = raw.split(";")[0].trim();
+            }
+        }
+
+        if (cookieStr) {
+            _cookieCache = cookieStr;
+            _cookieFetchedAt = now;
+            console.log("fetchCookie: got cookie len=" + cookieStr.length);
+        } else {
+            console.warn("fetchCookie: no Set-Cookie in response, proceeding without cookie");
+            _cookieCache = "";
+            _cookieFetchedAt = now;
+        }
+    } catch (e) {
+        console.warn("fetchCookie error:", e.message || e);
+        _cookieCache = "";
+        _cookieFetchedAt = now;
+    }
+
+    return _cookieCache;
+}
+
+/**
+ * 构造带 Cookie 的完整请求 Headers。
+ * referer 可选，详情页请求时传入具体页面 URL。
+ */
+async function buildHeaders(referer) {
+    var cookie = await fetchCookie();
+    var headers = {
+        "User-Agent": UA,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1",
+        "DNT": "1",
+        "Referer": referer || (BASE_DOMAIN + "/cn/"),
+        "Connection": "keep-alive"
+    };
+    if (cookie) {
+        headers["Cookie"] = cookie;
+    }
+    return headers;
+}
 
 // ── 工具函数 ─────────────────────────────────────────────────
 
@@ -838,10 +914,24 @@ async function loadPage(params) {
 
 async function fetchVideoList(url) {
     try {
+        var headers = await buildHeaders(BASE_DOMAIN + "/cn/");
         var response = await Widget.http.get(url, {
-            headers: BASE_HEADERS,
+            headers: headers,
             allow_redirects: true
         });
+
+        // 403 时强制刷新 Cookie 后重试一次
+        if (!response || !response.data || response.data.length < 10000
+            || (response.status && response.status === 403)) {
+            console.warn("fetchVideoList: bad response, refreshing cookie and retrying...");
+            _cookieCache = null;
+            _cookieFetchedAt = 0;
+            headers = await buildHeaders(BASE_DOMAIN + "/cn/");
+            response = await Widget.http.get(url, {
+                headers: headers,
+                allow_redirects: true
+            });
+        }
 
         if (!response || !response.data || response.data.length < 10000) {
             return [createPlaceholderItem("网络请求失败或数据异常")];
@@ -850,6 +940,7 @@ async function fetchVideoList(url) {
         return parseVideoList(response.data);
 
     } catch (error) {
+        console.error("fetchVideoList error:", error.message || error);
         return [createPlaceholderItem("访问失败，可能已被风控")];
     }
 }
@@ -943,8 +1034,9 @@ async function loadDetail(link) {
     }
 
     try {
+        var headers = await buildHeaders(link);
         var response = await Widget.http.get(link, {
-            headers: BASE_HEADERS,
+            headers: headers,
             allow_redirects: true
         });
 
