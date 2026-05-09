@@ -4,7 +4,7 @@ var WidgetMetadata = {
     description: "MissAV源码",
     author: "Butterflyz",
     site: "miss",
-    version: "1.0.4",
+    version: "1.0.2",
     requiredVersion: "0.0.2",
     detailCacheDuration: 300,
     modules: [
@@ -120,9 +120,9 @@ var WidgetMetadata = {
                     type: "enumeration",
                     description: "选择分类",
                     enumOptions: [
-                        { title: "无码流出", value: "https://missav.ws/dm621/cn/uncensored-leak" },
-                        { title: "FC2", value: "https://missav.ws/dm99/cn/fc2" },
-                        { title: "HEYZO", value: "https://missav.ws/dm319995/cn/heyzo" },
+                        { title: "无码流出", value: "https://missav.ws/dm628/cn/uncensored-leak" },
+                        { title: "FC2", value: "https://missav.ws/dm150/cn/fc2" },
+                        { title: "HEYZO", value: "https://missav.ws/dm1198483/cn/heyzo" },
                         { title: "东京热", value: "https://missav.ws/dm29/cn/tokyohot" },
                         { title: "Caribbeancom", value: "https://missav.ws/dm1271239/cn/caribbeancom" },
                         { title: "Gachinco", value: "https://missav.ws/dm135/cn/gachinco" },
@@ -164,7 +164,7 @@ var WidgetMetadata = {
                     type: "enumeration",
                     description: "选择分类",
                     enumOptions: [
-                        { title: "麻豆传媒", value: "https://missav.ws/dm34/cn/madou" },
+                        { title: "麻豆传媒", value: "https://missav.ws/dm35/cn/madou" },
                         { title: "韩国直播", value: "https://missav.ws/cn/klive" },
                         { title: "中国直播", value: "https://missav.ws/cn/clive" }
                     ]
@@ -708,7 +708,7 @@ async function fetchCookie() {
     }
 
     try {
-        var resp = await Widget.http.get(BASE_DOMAIN + "/cn/", {
+        var resp = await Widget.http.get(BASE_DOMAIN + "/dm194/cn/", {
             headers: {
                 "User-Agent": UA,
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -774,7 +774,7 @@ async function buildHeaders(referer) {
         "Sec-Fetch-User": "?1",
         "Upgrade-Insecure-Requests": "1",
         "DNT": "1",
-        "Referer": referer || (BASE_DOMAIN + "/cn/"),
+        "Referer": referer || (BASE_DOMAIN + "/dm194/cn/"),
         "Connection": "keep-alive"
     };
     if (cookie) {
@@ -876,7 +876,7 @@ async function loadWeeklyHot(params) {
 async function loadMonthlyHot(params) {
     params = params || {};
     var page = parseInt(params.page) || 1;
-    var url = "https://missav.ws/dm257/cn/monthly-hot?sort=monthly_views";
+    var url = "https://missav.ws/dm263/cn/monthly-hot?sort=monthly_views";
     if (page > 1) url += "&page=" + page;
     return await fetchVideoList(url);
 }
@@ -884,7 +884,7 @@ async function loadMonthlyHot(params) {
 async function loadNewRelease(params) {
     params = params || {};
     var page = parseInt(params.page) || 1;
-    var url = "https://missav.ws/dm588/cn/release?sort=released_at";
+    var url = "https://missav.ws/dm590/cn/release?sort=released_at";
     if (page > 1) url += "&page=" + page;
     return await fetchVideoList(url);
 }
@@ -915,7 +915,7 @@ async function loadPage(params) {
 async function fetchVideoList(url) {
     // 内部实际发起请求，403 会被 Dio 作为异常抛出
     async function doRequest(retrying) {
-        var headers = await buildHeaders(BASE_DOMAIN + "/cn/");
+        var headers = await buildHeaders(BASE_DOMAIN + "/dm194/cn/");
         try {
             var response = await Widget.http.get(url, {
                 headers: headers,
